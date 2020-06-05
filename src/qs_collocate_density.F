@@ -2322,17 +2322,20 @@ CONTAINS
                                      atomic_kind_set, qs_kind_set, cell, dft_control, particle_set, &
                                      pw_env, basis_type, external_vector)
 
-      TYPE(cp_fm_type), POINTER                          :: mo_vectors
-      INTEGER                                            :: ivector
+      TYPE(cp_fm_type), INTENT(IN), POINTER              :: mo_vectors
+      INTEGER, INTENT(IN)                                :: ivector
       TYPE(pw_p_type), INTENT(INOUT)                     :: rho, rho_gspace
-      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
-      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
-      TYPE(cell_type), POINTER                           :: cell
-      TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
-      TYPE(pw_env_type), POINTER                         :: pw_env
+      TYPE(atomic_kind_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: atomic_kind_set
+      TYPE(qs_kind_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: qs_kind_set
+      TYPE(cell_type), INTENT(IN), POINTER               :: cell
+      TYPE(dft_control_type), INTENT(IN), POINTER        :: dft_control
+      TYPE(particle_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: particle_set
+      TYPE(pw_env_type), INTENT(IN), POINTER             :: pw_env
       CHARACTER(LEN=*), INTENT(IN), OPTIONAL             :: basis_type
-      REAL(KIND=dp), DIMENSION(:), OPTIONAL              :: external_vector
+      REAL(KIND=dp), DIMENSION(:), INTENT(IN), OPTIONAL  :: external_vector
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calculate_wavefunction', &
          routineP = moduleN//':'//routineN
