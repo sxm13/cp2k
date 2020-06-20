@@ -64,8 +64,9 @@ MODULE qs_ks_methods
    USE efield_utils,                    ONLY: efield_potential
    USE hartree_local_methods,           ONLY: Vh_1c_gg_integrals
    USE hartree_local_types,             ONLY: ecoul_1center_type
-   USE hfx_admm_utils,                  ONLY: hfx_admm_init,&
-                                              hfx_ks_matrix
+   USE hfx_admm_utils,                  ONLY: hfx_admm_init
+   USE hfx_ks_matrix,                   ONLY: hfx_ks_matrix_gamma,&
+                                              hfx_ks_matrix_kp
    USE input_constants,                 ONLY: do_ppl_grid,&
                                               outer_scf_becke_constraint,&
                                               outer_scf_hirshfeld_constraint
@@ -216,7 +217,7 @@ CONTAINS
       CHARACTER(len=default_string_length)               :: name
       INTEGER                                            :: handle, iatom, idir, img, ispin, &
                                                             nimages, ns, nspins
-      LOGICAL :: do_adiabatic_rescaling, do_ddapc, do_hfx, do_ppl, gapw, gapw_xc, &
+      LOGICAL :: do_adiabatic_rescaling, do_ddapc, do_hfx, do_ppl, dokp, gapw, gapw_xc, &
          hfx_treat_lsd_in_core, just_energy_xc, lrigpw, my_print, rigpw, use_virial
       REAL(KIND=dp)                                      :: ecore_ppl, edisp, ee_ener, ekin_mol, &
                                                             mulliken_order_p
@@ -321,6 +322,7 @@ CONTAINS
       CPASSERT(ASSOCIATED(rho))
       CPASSERT(ASSOCIATED(pw_env))
       CPASSERT(SIZE(ks_matrix, 1) > 0)
+      dokp = (nimages > 1)
 
       ! Setup the possible usage of DDAPC charges
       do_ddapc = dft_control%qs_control%ddapc_restraint .OR. &
@@ -642,9 +644,12 @@ CONTAINS
 
       ! *** Add Hartree-Fock contribution if required ***
       IF (do_hfx) THEN
-         CALL hfx_ks_matrix(qs_env, ks_matrix, rho, energy, calculate_forces, &
-                            just_energy, v_rspace_new, v_tau_rspace)
-!!    Adiabatic rescaling  only if do_hfx; right?????
+         IF (dokp) THEN
+            CALL hfx_ks_matrix_kp(qs_env, ks_matrix, energy, calculate_forces)
+         ELSE
+            CALL hfx_ks_matrix_gamma(qs_env, ks_matrix, rho, energy, calculate_forces, &
+                                     just_energy, v_rspace_new, v_tau_rspace)
+         END IF
       END IF !do_hfx
 
       IF (do_ppl .AND. calculate_forces) THEN

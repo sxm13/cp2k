@@ -1020,7 +1020,7 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:, :), POINTER            :: xkp
       TYPE(copy_info_type), ALLOCATABLE, DIMENSION(:)    :: info
       TYPE(cp_fm_type), POINTER                          :: fmdummy
-      TYPE(cp_para_env_type), POINTER                    :: para_env, para_env_inter_kp
+      TYPE(cp_para_env_type), POINTER                    :: para_env
       TYPE(dbcsr_type), POINTER                          :: cpmat, rpmat, scpmat, srpmat
       TYPE(kpoint_env_type), POINTER                     :: kp
       TYPE(kpoint_sym_type), POINTER                     :: kpsym
@@ -1044,7 +1044,6 @@ CONTAINS
       END IF
 
       CALL get_kpoint_info(kpoint, nkp=nkp, xkp=xkp, wkp=wkp, &
-                           para_env_inter_kp=para_env_inter_kp, &
                            sab_nl=sab_nl, cell_to_index=cell_to_index)
       ! initialize real space density matrices
       kp => kpoint%kp_env(1)%kpoint_env

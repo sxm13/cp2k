@@ -19,7 +19,7 @@ MODULE qs_tddfpt2_operators
    USE cp_gemm_interface,               ONLY: cp_gemm
    USE dbcsr_api,                       ONLY: dbcsr_p_type,&
                                               dbcsr_set
-   USE hfx_admm_utils,                  ONLY: tddft_hfx_matrix
+   USE hfx_ks_matrix,                   ONLY: tddft_hfx_matrix
    USE kinds,                           ONLY: dp
    USE pw_env_types,                    ONLY: pw_env_get,&
                                               pw_env_type
