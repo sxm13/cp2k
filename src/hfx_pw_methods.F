@@ -26,6 +26,7 @@ MODULE hfx_pw_methods
                                               cp_logger_type
    USE cp_output_handling,              ONLY: cp_print_key_finished_output,&
                                               cp_print_key_unit_nr
+   USE cp_para_types,                   ONLY: cp_para_env_type
    USE dbcsr_api,                       ONLY: dbcsr_type
    USE input_constants,                 ONLY: do_potential_coulomb,&
                                               do_potential_short,&
@@ -35,6 +36,7 @@ MODULE hfx_pw_methods
                                               section_vals_type,&
                                               section_vals_val_get
    USE kinds,                           ONLY: dp
+   USE kpoint_types,                    ONLY: kpoint_type
    USE mathconstants,                   ONLY: fourpi
    USE particle_types,                  ONLY: particle_type
    USE pw_env_types,                    ONLY: pw_env_type
@@ -67,7 +69,7 @@ MODULE hfx_pw_methods
    PRIVATE
 
    ! *** Public subroutines ***
-   PUBLIC :: pw_hfx
+   PUBLIC :: pw_hfx, pw_hfx_kp
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'hfx_pw_methods'
 
@@ -286,5 +288,274 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE pw_hfx
+
+! **************************************************************************************************
+!> \brief computes the Hartree-Fock energy brute force in a pw basis for k-point calculations
+!> \param qs_env ...
+!> \param ehfx ...
+!> \param hfx_section ...
+!> \param poisson_env ...
+!> \param auxbas_pw_pool ...
+!> \param irep ...
+!> \par History
+!>      12.2007 created [Joost VandeVondele]
+!>      06.2020 kpoints [JGH]
+!> \note
+!>      only computes the HFX energy, no derivatives as yet
+! **************************************************************************************************
+   SUBROUTINE pw_hfx_kp(qs_env, ehfx, hfx_section, poisson_env, auxbas_pw_pool, irep)
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      REAL(KIND=dp), INTENT(IN)                          :: ehfx
+      TYPE(section_vals_type), POINTER                   :: hfx_section
+      TYPE(pw_poisson_type), POINTER                     :: poisson_env
+      TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
+      INTEGER                                            :: irep
+
+      CHARACTER(*), PARAMETER :: routineN = 'pw_hfx_kp', routineP = moduleN//':'//routineN
+
+      INTEGER                                            :: blocksize, handle, ig, iloc, iorb, &
+                                                            iorb_block, ispin, iw, jloc, jorb, &
+                                                            jorb_block, norb, potential_type
+      LOGICAL                                            :: do_pw_hfx, explicit
+      REAL(KIND=dp)                                      :: exchange_energy, fraction, g2, g3d, gg, &
+                                                            omega, pair_energy, rcut, scaling
+      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
+      TYPE(cell_type), POINTER                           :: cell
+      TYPE(cp_fm_type), POINTER                          :: mo_coeff
+      TYPE(cp_logger_type), POINTER                      :: logger
+      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(dbcsr_type), POINTER                          :: mo_coeff_b
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(kpoint_type), POINTER                         :: kpoint
+      TYPE(mo_set_p_type), DIMENSION(:), POINTER         :: mo_array
+      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_env_type), POINTER                         :: pw_env
+      TYPE(pw_grid_type), POINTER                        :: grid
+      TYPE(pw_p_type)                                    :: pot_g, rho_g, rho_r
+      TYPE(pw_p_type), ALLOCATABLE, DIMENSION(:)         :: rho_i, rho_j
+      TYPE(pw_type), POINTER                             :: greenfn
+      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
+      TYPE(section_vals_type), POINTER                   :: ip_section
+
+      CALL timeset(routineN, handle)
+      logger => cp_get_default_logger()
+
+      CALL section_vals_val_get(hfx_section, "PW_HFX", l_val=do_pw_hfx, i_rep_section=irep)
+
+      IF (do_pw_hfx) THEN
+         CALL section_vals_val_get(hfx_section, "FRACTION", r_val=fraction)
+         CALL section_vals_val_get(hfx_section, "PW_HFX_BLOCKSIZE", i_val=blocksize)
+
+         CALL get_qs_env(qs_env, mos=mo_array, pw_env=pw_env, dft_control=dft_control, &
+                         kpoints=kpoint, &
+                         cell=cell, particle_set=particle_set, &
+                         atomic_kind_set=atomic_kind_set, qs_kind_set=qs_kind_set)
+         para_env => kpoint%blacs_env_all%para_env
+
+         ! limit the blocksize by the number of orbitals
+         CALL get_mo_set(mo_set=mo_array(1)%mo_set, mo_coeff=mo_coeff)
+         CALL cp_fm_get_info(mo_coeff, ncol_global=norb)
+         blocksize = MAX(1, MIN(blocksize, norb))
+
+         CALL pw_pool_create_pw(auxbas_pw_pool, rho_r%pw, &
+                                use_data=REALDATA3D, &
+                                in_space=REALSPACE)
+         CALL pw_pool_create_pw(auxbas_pw_pool, rho_g%pw, &
+                                use_data=COMPLEXDATA1D, &
+                                in_space=RECIPROCALSPACE)
+         CALL pw_pool_create_pw(auxbas_pw_pool, pot_g%pw, &
+                                use_data=COMPLEXDATA1D, &
+                                in_space=RECIPROCALSPACE)
+
+         ALLOCATE (rho_i(blocksize))
+         ALLOCATE (rho_j(blocksize))
+
+         DO iorb_block = 1, blocksize
+            NULLIFY (rho_i(iorb_block)%pw)
+            CALL pw_create(rho_i(iorb_block)%pw, rho_r%pw%pw_grid, &
+                           use_data=REALDATA3D, &
+                           in_space=REALSPACE)
+            NULLIFY (rho_j(iorb_block)%pw)
+            CALL pw_create(rho_j(iorb_block)%pw, rho_r%pw%pw_grid, &
+                           use_data=REALDATA3D, &
+                           in_space=REALSPACE)
+         ENDDO
+
+         exchange_energy = 0.0_dp
+
+         DO ispin = 1, SIZE(mo_array)
+
+!        DO ik = 1, nkp
+!           my_kpgrp = (ik >= kpoint%kp_range(1) .AND. ik <= kpoint%kp_range(2))
+!           IF (my_kpgrp) THEN
+!              ikk = ik - kpoint%kp_range(1) + 1
+!              kp => kpoint%kp_env(ikk)%kpoint_env
+!           ELSE
+!              NULLIFY (kp)
+!           END IF
+!           IF (my_kpgrp) THEN
+!              DO ic = 1, nc
+!                 indx = indx + 1
+!                 CALL cp_fm_start_copy_general(kp%pmat(ic, ispin)%matrix, fmwork(ic)%matrix, para_env, info(indx))
+!              END DO
+!           ELSE
+!              DO ic = 1, nc
+!                 indx = indx + 1
+!                 CALL cp_fm_start_copy_general(fmdummy, fmwork(ic)%matrix, para_env, info(indx))
+!              END DO
+!           END IF
+!           DO ic = 1, nc
+!              indx = indx + 1
+!              CALL cp_fm_finish_copy_general(fmwork(ic)%matrix, info(indx))
+!           END DO
+
+            CALL get_mo_set(mo_set=mo_array(ispin)%mo_set, mo_coeff=mo_coeff, mo_coeff_b=mo_coeff_b)
+
+            NULLIFY (greenfn)
+            CALL pw_pool_create_pw(auxbas_pw_pool, greenfn, &
+                                   use_data=COMPLEXDATA1D, &
+                                   in_space=RECIPROCALSPACE)
+            ip_section => section_vals_get_subs_vals(hfx_section, "INTERACTION_POTENTIAL")
+            CALL section_vals_get(ip_section, explicit=explicit)
+            potential_type = do_potential_coulomb
+            IF (explicit) THEN
+               CALL section_vals_val_get(ip_section, "POTENTIAL_TYPE", i_val=potential_type)
+            ENDIF
+            IF (potential_type == do_potential_coulomb) THEN
+               CALL pw_copy(poisson_env%green_fft%influence_fn, greenfn)
+            ELSEIF (potential_type == do_potential_truncated) THEN
+               CALL section_vals_val_get(ip_section, "CUTOFF_RADIUS", r_val=rcut)
+               grid => poisson_env%green_fft%influence_fn%pw_grid
+               DO ig = grid%first_gne0, grid%ngpts_cut_local
+                  g2 = grid%gsq(ig)
+                  gg = SQRT(g2)
+                  g3d = fourpi/g2
+                  greenfn%cc(ig) = g3d*(1.0_dp - COS(rcut*gg))
+               END DO
+               IF (grid%have_g0) &
+                  greenfn%cc(1) = 0.5_dp*fourpi*rcut*rcut
+            ELSEIF (potential_type == do_potential_short) THEN
+               CALL section_vals_val_get(ip_section, "OMEGA", r_val=omega)
+               IF (omega > 0.0_dp) omega = 0.25_dp/(omega*omega)
+               grid => poisson_env%green_fft%influence_fn%pw_grid
+               DO ig = grid%first_gne0, grid%ngpts_cut_local
+                  g2 = grid%gsq(ig)
+                  gg = -omega*g2
+                  g3d = fourpi/g2
+                  greenfn%cc(ig) = g3d*(1.0_dp - EXP(gg))
+               END DO
+               IF (grid%have_g0) greenfn%cc(1) = 0.0_dp
+            ELSE
+               CPWARN("PW_SCF: Potential type not supported, calculation uses Coulomb potential.")
+            END IF
+
+            IF (mo_array(ispin)%mo_set%use_mo_coeff_b) THEN !fm->dbcsr
+               CALL copy_dbcsr_to_fm(mo_coeff_b, mo_coeff) !fm->dbcsr
+            ENDIF !fm->dbcsr
+
+            CALL cp_fm_get_info(mo_coeff, ncol_global=norb)
+
+            DO iorb_block = 1, norb, blocksize
+
+               DO iorb = iorb_block, MIN(iorb_block + blocksize - 1, norb)
+
+                  iloc = iorb - iorb_block + 1
+                  CALL calculate_wavefunction(mo_coeff, iorb, rho_i(iloc), rho_g, &
+                                              atomic_kind_set, qs_kind_set, cell, dft_control, particle_set, &
+                                              pw_env)
+
+               ENDDO
+
+               DO jorb_block = iorb_block, norb, blocksize
+
+                  DO jorb = jorb_block, MIN(jorb_block + blocksize - 1, norb)
+
+                     jloc = jorb - jorb_block + 1
+                     CALL calculate_wavefunction(mo_coeff, jorb, rho_j(jloc), rho_g, &
+                                                 atomic_kind_set, qs_kind_set, cell, dft_control, particle_set, &
+                                                 pw_env)
+
+                  ENDDO
+
+                  DO iorb = iorb_block, MIN(iorb_block + blocksize - 1, norb)
+                     iloc = iorb - iorb_block + 1
+                     DO jorb = jorb_block, MIN(jorb_block + blocksize - 1, norb)
+                        jloc = jorb - jorb_block + 1
+                        IF (jorb < iorb) CYCLE
+
+                        ! compute the pair density
+                        rho_r%pw%cr3d = rho_i(iloc)%pw%cr3d*rho_j(jloc)%pw%cr3d
+
+                        ! go the g-space and compute hartree energy
+                        CALL pw_transfer(rho_r%pw, rho_g%pw)
+                        CALL pw_poisson_solve(poisson_env, rho_g%pw, pair_energy, pot_g%pw, &
+                                              greenfn=greenfn)
+
+                        ! sum up to the full energy
+                        scaling = fraction
+                        IF (SIZE(mo_array) == 1) scaling = scaling*2.0_dp
+                        IF (iorb /= jorb) scaling = scaling*2.0_dp
+
+                        exchange_energy = exchange_energy - scaling*pair_energy
+
+                     ENDDO
+                  ENDDO
+
+               ENDDO
+            ENDDO
+         ENDDO
+
+!     ! Clean up communication
+!     indx = 0
+!     DO ispin = 1, nspin
+!        DO ik = 1, nkp
+!           my_kpgrp = (ik >= kpoint%kp_range(1) .AND. ik <= kpoint%kp_range(2))
+!           IF (my_kpgrp) THEN
+!              ikk = ik - kpoint%kp_range(1) + 1
+!              kp => kpoint%kp_env(ikk)%kpoint_env
+
+!              DO ic = 1, nc
+!                 indx = indx + 1
+!                 IF (wtype) THEN
+!                    CALL cp_fm_cleanup_copy_general(kp%wmat(ic, ispin)%matrix, info(indx))
+!                 ELSE
+!                    CALL cp_fm_cleanup_copy_general(kp%pmat(ic, ispin)%matrix, info(indx))
+!                 END IF
+!              END DO
+!           ELSE
+!              ! calls with dummy arguments, so not included
+!              ! therefore just increment counter by trip count
+!              indx = indx + nc
+!           END IF
+!        END DO
+!     END DO
+
+         DO iorb_block = 1, blocksize
+            CALL pw_release(rho_i(iorb_block)%pw)
+            CALL pw_release(rho_j(iorb_block)%pw)
+         ENDDO
+
+         CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_r%pw)
+         CALL pw_pool_give_back_pw(auxbas_pw_pool, rho_g%pw)
+         CALL pw_pool_give_back_pw(auxbas_pw_pool, pot_g%pw)
+         CALL pw_pool_give_back_pw(auxbas_pw_pool, greenfn)
+
+         iw = cp_print_key_unit_nr(logger, hfx_section, "HF_INFO", &
+                                   extension=".scfLog")
+
+         IF (iw > 0) THEN
+            WRITE (UNIT=iw, FMT="((T3,A,T61,F20.10))") &
+               "HF_PW_HFX| PW exchange energy:", exchange_energy
+            WRITE (UNIT=iw, FMT="((T3,A,T61,F20.10),/)") &
+               "HF_PW_HFX| Gaussian exchange energy:", ehfx
+         ENDIF
+
+         CALL cp_print_key_finished_output(iw, logger, hfx_section, "HF_INFO")
+
+      ENDIF
+
+      CALL timestop(handle)
+
+   END SUBROUTINE pw_hfx_kp
 
 END MODULE hfx_pw_methods
