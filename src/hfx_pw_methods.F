@@ -151,6 +151,7 @@ CONTAINS
       CALL pw_pool_create_pw(auxbas_pw_pool, greenfn, &
                              use_data=COMPLEXDATA1D, &
                              in_space=RECIPROCALSPACE)
+
       ip_section => section_vals_get_subs_vals(hfx_section, "INTERACTION_POTENTIAL")
       CALL section_vals_get(ip_section, explicit=explicit)
       potential_type = do_potential_coulomb
@@ -158,9 +159,7 @@ CONTAINS
          CALL section_vals_val_get(ip_section, "POTENTIAL_TYPE", i_val=potential_type)
       ENDIF
 
-      IF (potential_type == do_potential_coulomb) THEN
-         CALL pw_copy(poisson_env%green_fft%influence_fn, greenfn)
-      ELSEIF (potential_type == do_potential_truncated) THEN
+      IF (potential_type == do_potential_truncated) THEN
          CALL section_vals_val_get(ip_section, "CUTOFF_RADIUS", r_val=rcut)
          grid => poisson_env%green_fft%influence_fn%pw_grid
          DO ig = grid%first_gne0, grid%ngpts_cut_local
@@ -183,7 +182,12 @@ CONTAINS
          END DO
          IF (grid%have_g0) greenfn%cc(1) = 0.0_dp
       ELSE
-         CPWARN("PW_SCF: Specified potential type not supported, fallback to Coulomb potential.")
+         IF (potential_type /= do_potential_coulomb) THEN
+            CALL cp_warn(__LOCATION__, &
+                "PW_SCF: Specified INTERACTION_POTENTIAL not supported, fallback to Coulomb potential.")
+         END IF
+
+         CALL pw_copy(poisson_env%green_fft%influence_fn, greenfn)
       END IF
 
       DO iorb = 1, blocksize
