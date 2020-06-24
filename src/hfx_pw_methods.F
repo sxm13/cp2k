@@ -18,7 +18,11 @@ MODULE hfx_pw_methods
    USE cell_types,                      ONLY: cell_type
    USE cp_control_types,                ONLY: dft_control_type
    USE cp_dbcsr_operations,             ONLY: copy_dbcsr_to_fm
-   USE cp_fm_types,                     ONLY: cp_fm_get_info,&
+   USE cp_fm_struct,                    ONLY: cp_fm_struct_type
+   USE cp_fm_types,                     ONLY: cp_fm_create,&
+                                              cp_fm_get_info,&
+                                              cp_fm_p_type,&
+                                              cp_fm_release,&
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_type
@@ -34,7 +38,8 @@ MODULE hfx_pw_methods
                                               section_vals_type,&
                                               section_vals_val_get
    USE kinds,                           ONLY: dp
-   USE kpoint_types,                    ONLY: kpoint_type
+   USE kpoint_types,                    ONLY: kpoint_env_type,&
+                                              kpoint_type
    USE mathconstants,                   ONLY: fourpi
    USE particle_types,                  ONLY: particle_type
    USE pw_env_types,                    ONLY: pw_env_type
@@ -185,6 +190,7 @@ CONTAINS
             IF (grid%have_g0) greenfn%cc(1) = 0.0_dp
          ELSE
             CPWARN("PW_SCF: Potential type not supported, calculation uses Coulomb potential.")
+            CALL pw_copy(poisson_env%green_fft%influence_fn, greenfn)
          END IF
 
          DO iorb_block = 1, blocksize
@@ -311,19 +317,21 @@ CONTAINS
 
       CHARACTER(*), PARAMETER :: routineN = 'pw_hfx_kp', routineP = moduleN//':'//routineN
 
-      INTEGER                                            :: blocksize, handle, ig, iloc, iorb, &
-                                                            iorb_block, ispin, iw, jloc, jorb, &
-                                                            jorb_block, norb, potential_type
-      LOGICAL                                            :: do_pw_hfx, explicit
+      INTEGER :: blocksize, handle, ic, ig, ik, ikk, iloc, indx, iorb, iorb_block, is, ispin, iw, &
+         jloc, jorb, jorb_block, nc, nkp, norb, nspin, potential_type
+      LOGICAL                                            :: do_pw_hfx, explicit, my_kpgrp, real_only
       REAL(KIND=dp)                                      :: exchange_energy, fraction, g2, g3d, gg, &
                                                             omega, pair_energy, rcut, scaling
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cell_type), POINTER                           :: cell
+      TYPE(cp_fm_p_type), DIMENSION(:, :, :), POINTER    :: fmwork
+      TYPE(cp_fm_struct_type), POINTER                   :: matrix_struct
       TYPE(cp_fm_type), POINTER                          :: mo_coeff
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(cp_para_env_type), POINTER                    :: para_env
       TYPE(dbcsr_type), POINTER                          :: mo_coeff_b
       TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(kpoint_env_type), POINTER                     :: kp
       TYPE(kpoint_type), POINTER                         :: kpoint
       TYPE(mo_set_p_type), DIMENSION(:), POINTER         :: mo_array
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
@@ -381,31 +389,66 @@ CONTAINS
 
          exchange_energy = 0.0_dp
 
-         DO ispin = 1, SIZE(mo_array)
+         kp => kpoint%kp_env(1)%kpoint_env
+         nspin = SIZE(kp%mos, 2)
+         nc = SIZE(kp%mos, 1)
+         real_only = (nc == 1)
+         nkp = kpoint%nkp
 
-!        DO ik = 1, nkp
-!           my_kpgrp = (ik >= kpoint%kp_range(1) .AND. ik <= kpoint%kp_range(2))
-!           IF (my_kpgrp) THEN
-!              ikk = ik - kpoint%kp_range(1) + 1
-!              kp => kpoint%kp_env(ikk)%kpoint_env
-!           ELSE
-!              NULLIFY (kp)
-!           END IF
-!           IF (my_kpgrp) THEN
-!              DO ic = 1, nc
-!                 indx = indx + 1
-!                 CALL cp_fm_start_copy_general(kp%pmat(ic, ispin)%matrix, fmwork(ic)%matrix, para_env, info(indx))
-!              END DO
-!           ELSE
-!              DO ic = 1, nc
-!                 indx = indx + 1
-!                 CALL cp_fm_start_copy_general(fmdummy, fmwork(ic)%matrix, para_env, info(indx))
-!              END DO
-!           END IF
-!           DO ic = 1, nc
-!              indx = indx + 1
-!              CALL cp_fm_finish_copy_general(fmwork(ic)%matrix, info(indx))
-!           END DO
+         CALL cp_fm_get_info(mo_coeff, matrix_struct=matrix_struct)
+         ALLOCATE (fmwork(nc, nkp, nspin))
+         DO is = 1, nspin
+            DO ik = 1, nkp
+               DO ic = 1, nc
+                  CALL cp_fm_create(fmwork(ic, ik, is)%matrix, matrix_struct)
+               END DO
+            END DO
+         END DO
+
+         DO ispin = 1, nspin
+
+            indx = 0
+            DO ik = 1, nkp
+               my_kpgrp = (ik >= kpoint%kp_range(1) .AND. ik <= kpoint%kp_range(2))
+               IF (my_kpgrp) THEN
+                  ikk = ik - kpoint%kp_range(1) + 1
+                  kp => kpoint%kp_env(ikk)%kpoint_env
+               ELSE
+                  NULLIFY (kp)
+               END IF
+               IF (my_kpgrp) THEN
+                  DO ic = 1, nc
+                     indx = indx + 1
+!                    CALL cp_fm_start_copy_general(kp%pmat(ic, ispin)%matrix, fmwork(ic)%matrix, para_env, info(indx))
+                  END DO
+               ELSE
+                  DO ic = 1, nc
+                     indx = indx + 1
+!                    CALL cp_fm_start_copy_general(fmdummy, fmwork(ic)%matrix, para_env, info(indx))
+                  END DO
+               END IF
+               DO ic = 1, nc
+                  indx = indx + 1
+!                 CALL cp_fm_finish_copy_general(fmwork(ic)%matrix, info(indx))
+               END DO
+            END DO
+            ! Clean up communication
+            indx = 0
+            DO ik = 1, nkp
+               my_kpgrp = (ik >= kpoint%kp_range(1) .AND. ik <= kpoint%kp_range(2))
+               IF (my_kpgrp) THEN
+                  ikk = ik - kpoint%kp_range(1) + 1
+                  kp => kpoint%kp_env(ikk)%kpoint_env
+                  DO ic = 1, nc
+                     indx = indx + 1
+!                    CALL cp_fm_cleanup_copy_general(kp%pmat(ic, ispin)%matrix, info(indx))
+                  END DO
+               ELSE
+                  ! calls with dummy arguments, so not included
+                  ! therefore just increment counter by trip count
+                  indx = indx + nc
+               END IF
+            END DO
 
             CALL get_mo_set(mo_set=mo_array(ispin)%mo_set, mo_coeff=mo_coeff, mo_coeff_b=mo_coeff_b)
 
@@ -445,6 +488,7 @@ CONTAINS
                IF (grid%have_g0) greenfn%cc(1) = 0.0_dp
             ELSE
                CPWARN("PW_SCF: Potential type not supported, calculation uses Coulomb potential.")
+               CALL pw_copy(poisson_env%green_fft%influence_fn, greenfn)
             END IF
 
             IF (mo_array(ispin)%mo_set%use_mo_coeff_b) THEN !fm->dbcsr
@@ -503,31 +547,6 @@ CONTAINS
             ENDDO
          ENDDO
 
-!     ! Clean up communication
-!     indx = 0
-!     DO ispin = 1, nspin
-!        DO ik = 1, nkp
-!           my_kpgrp = (ik >= kpoint%kp_range(1) .AND. ik <= kpoint%kp_range(2))
-!           IF (my_kpgrp) THEN
-!              ikk = ik - kpoint%kp_range(1) + 1
-!              kp => kpoint%kp_env(ikk)%kpoint_env
-
-!              DO ic = 1, nc
-!                 indx = indx + 1
-!                 IF (wtype) THEN
-!                    CALL cp_fm_cleanup_copy_general(kp%wmat(ic, ispin)%matrix, info(indx))
-!                 ELSE
-!                    CALL cp_fm_cleanup_copy_general(kp%pmat(ic, ispin)%matrix, info(indx))
-!                 END IF
-!              END DO
-!           ELSE
-!              ! calls with dummy arguments, so not included
-!              ! therefore just increment counter by trip count
-!              indx = indx + nc
-!           END IF
-!        END DO
-!     END DO
-
          DO iorb_block = 1, blocksize
             CALL pw_release(rho_i(iorb_block)%pw)
             CALL pw_release(rho_j(iorb_block)%pw)
@@ -538,14 +557,25 @@ CONTAINS
          CALL pw_pool_give_back_pw(auxbas_pw_pool, pot_g%pw)
          CALL pw_pool_give_back_pw(auxbas_pw_pool, greenfn)
 
+         IF (ASSOCIATED(fmwork)) THEN
+            DO is = 1, nspin
+               DO ik = 1, nkp
+                  DO ic = 1, nc
+                     CALL cp_fm_release(fmwork(ic, ik, is)%matrix)
+                  END DO
+               END DO
+            END DO
+            DEALLOCATE (fmwork)
+         END IF
+
          iw = cp_print_key_unit_nr(logger, hfx_section, "HF_INFO", &
                                    extension=".scfLog")
 
          IF (iw > 0) THEN
             WRITE (UNIT=iw, FMT="((T3,A,T61,F20.10))") &
-               "HF_PW_HFX| PW exchange energy:", exchange_energy
+               "HF_PW_HFX| PW exchange energy(kpoints):", exchange_energy
             WRITE (UNIT=iw, FMT="((T3,A,T61,F20.10),/)") &
-               "HF_PW_HFX| Gaussian exchange energy:", ehfx
+               "HF_PW_HFX| Gaussian exchange energy(kpoints):", ehfx
          ENDIF
 
          CALL cp_print_key_finished_output(iw, logger, hfx_section, "HF_INFO")
