@@ -622,6 +622,17 @@ CONTAINS
             DEALLOCATE (fmwork)
          END IF
 
+         IF (ASSOCIATED(fmwork)) THEN
+            DO is = 1, nspin
+               DO ik = 1, nkp
+                  DO ic = 1, nc
+                     CALL cp_fm_release(fmwork(ic, ik, is)%matrix)
+                  END DO
+               END DO
+            END DO
+            DEALLOCATE (fmwork)
+         END IF
+
          iw = cp_print_key_unit_nr(logger, hfx_section, "HF_INFO", &
                                    extension=".scfLog")
 
