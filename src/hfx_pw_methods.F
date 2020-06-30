@@ -313,7 +313,6 @@ CONTAINS
       TYPE(kpoint_type), POINTER                         :: kpoint
       TYPE(mo_set_p_type), DIMENSION(:), POINTER         :: mo_array
       TYPE(mo_set_type), POINTER                         :: mo_set
-
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(pw_env_type), POINTER                         :: pw_env
       TYPE(pw_grid_type), POINTER                        :: grid
