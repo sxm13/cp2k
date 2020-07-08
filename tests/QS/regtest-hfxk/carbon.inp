@@ -33,6 +33,9 @@
         &PERIODIC
           NUMBER_OF_SHELLS 0
         &END
+        &MEMORY
+           MAX_MEMORY 0
+        &END
         PW_HFX
       &END
     &END XC
