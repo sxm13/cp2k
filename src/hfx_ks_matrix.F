@@ -375,7 +375,7 @@ CONTAINS
       INTEGER                                            :: handle, ikind, img, irep, ispin, mspin, &
                                                             n_rep_hf, nimages, ns, nspins
       LOGICAL                                            :: do_adiabatic_rescaling, &
-                                                            hfx_treat_lsd_in_core, &
+                                                            hfx_treat_lsd_in_core, distribute_fock_matrix, &
                                                             s_mstruct_changed, use_virial
       REAL(dp)                                           :: eh1, ehfx, eold
       REAL(dp), ALLOCATABLE, DIMENSION(:)                :: hf_energy
@@ -442,6 +442,9 @@ CONTAINS
       adiabatic_rescaling_section => section_vals_get_subs_vals(input, "DFT%XC%ADIABATIC_RESCALING")
       CALL section_vals_get(adiabatic_rescaling_section, explicit=do_adiabatic_rescaling)
       CPASSERT(.NOT. do_adiabatic_rescaling)
+
+      ! probably correct?
+      distribute_fock_matrix = .TRUE.
 
       ! *** Initialize the auxiliary ks matrix to zero if required
       IF (dft_control%do_admm) THEN
@@ -512,14 +515,12 @@ CONTAINS
                ENDDO
             END IF
          ELSE
-
-!deb        DO ispin = 1, mspin
-!deb           CALL integrate_four_center(qs_env, x_data, matrix_ks_orb, eh1, rho_ao_orb, hfx_sections, &
-!deb                                      para_env, s_mstruct_changed, irep, distribute_fock_matrix, &
-!deb                                      ispin=ispin)
-!deb           ehfx = ehfx + eh1
-!deb        END DO
-
+            DO ispin = 1, mspin
+               CALL integrate_four_center(qs_env, x_data, matrix_ks_orb, eh1, rho_ao_orb, hfx_sections, &
+                                          para_env, s_mstruct_changed, irep, distribute_fock_matrix, &
+                                          ispin=ispin)
+               ehfx = ehfx + eh1
+            END DO
          ENDIF
 
          IF (calculate_forces) THEN
@@ -543,8 +544,7 @@ CONTAINS
             END IF
          END IF
 
-         CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, &
-                         poisson_env=poisson_env)
+         CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, poisson_env=poisson_env)
          eh1 = ehfx - eold
          CALL pw_hfx_kp(qs_env, eh1, hfx_sections, poisson_env, auxbas_pw_pool, irep)
          eold = ehfx
