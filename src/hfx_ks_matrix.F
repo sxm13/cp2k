@@ -374,8 +374,9 @@ CONTAINS
 
       INTEGER                                            :: handle, ikind, img, irep, ispin, mspin, &
                                                             n_rep_hf, nimages, ns, nspins
-      LOGICAL                                            :: do_adiabatic_rescaling, &
-                                                            hfx_treat_lsd_in_core, distribute_fock_matrix, &
+      LOGICAL                                            :: distribute_fock_matrix, &
+                                                            do_adiabatic_rescaling, &
+                                                            hfx_treat_lsd_in_core, &
                                                             s_mstruct_changed, use_virial
       REAL(dp)                                           :: eh1, ehfx, eold
       REAL(dp), ALLOCATABLE, DIMENSION(:)                :: hf_energy
