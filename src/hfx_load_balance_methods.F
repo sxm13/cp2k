@@ -143,7 +143,7 @@ CONTAINS
       INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block_global
       LOGICAL                                            :: do_periodic
       TYPE(hfx_load_balance_type), POINTER               :: load_balance_parameter
-      INTEGER                                            :: kind_of(*)
+      INTEGER, DIMENSION(:)                              :: kind_of
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
       REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom
