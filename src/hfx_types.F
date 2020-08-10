@@ -1958,7 +1958,7 @@ CONTAINS
             CALL cp_warn(__LOCATION__, &
                          "Periodic Hartree Fock calculation requested without use "// &
                          "of a truncated or shortrange potential. This may lead to unphysical total energies. "// &
-                         "Use a truncated  potential to avoid possible problems.")
+                         "Use a truncated potential to avoid possible problems.")
          ELSE
             l_min = MIN(plane_distance(1, 0, 0, cell), &
                         plane_distance(0, 1, 0, cell), &
@@ -2820,4 +2820,3 @@ CONTAINS
    END SUBROUTINE alloc_containers
 
 END MODULE hfx_types
-

@@ -486,13 +486,13 @@ CONTAINS
 
       DO iatom = i_start, i_end
          DO jatom = j_start, j_end
-            IF (atomic_pair_list(jatom, iatom) .EQV. .FALSE.) CYCLE
+            IF (jatom < iatom) CYCLE
+            IF (.NOT. atomic_pair_list(jatom, iatom)) CYCLE
 
             ikind = kind_of(iatom)
             nseta = basis_parameter(ikind)%nset
             ra = particle_set(iatom)%r(:)
 
-            IF (jatom < iatom) CYCLE
             jkind = kind_of(jatom)
             nsetb = basis_parameter(jkind)%nset
             rb = particle_set(jatom)%r(:)
@@ -555,7 +555,7 @@ CONTAINS
                                      blocks)
       INTEGER, INTENT(IN)                                :: natom
       LOGICAL, DIMENSION(natom, natom)                   :: atomic_pair_list
-      INTEGER                                            :: kind_of(*)
+      INTEGER, DIMENSION(:)                              :: kind_of
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       LOGICAL, INTENT(IN)                                :: do_periodic
@@ -564,26 +564,20 @@ CONTAINS
       TYPE(cell_type), POINTER                           :: cell
       TYPE(hfx_block_range_type), DIMENSION(:), POINTER  :: blocks
 
-      INTEGER                                            :: iatom, iatom_end, iatom_start, iblock, &
-                                                            ikind, jatom, jatom_end, jatom_start, &
-                                                            jblock, jkind, nseta, nsetb
+      INTEGER                                            :: iatom, iblock, ikind, jatom, jblock, &
+                                                            jkind, nseta, nsetb
       REAL(KIND=dp)                                      :: rab2
       REAL(KIND=dp), DIMENSION(3)                        :: B11, pbc_B, ra, rb, temp
 
       atomic_pair_list = .FALSE.
 
       DO iblock = 1, SIZE(blocks)
-         iatom_start = blocks(iblock)%istart
-         iatom_end = blocks(iblock)%iend
          DO jblock = 1, SIZE(blocks)
-            jatom_start = blocks(jblock)%istart
-            jatom_end = blocks(jblock)%iend
-
-            DO iatom = iatom_start, iatom_end
+            DO iatom = blocks(iblock)%istart, blocks(iblock)%iend
                ikind = kind_of(iatom)
                nseta = basis_parameter(ikind)%nset
                ra = particle_set(iatom)%r(:)
-               DO jatom = jatom_start, jatom_end
+               DO jatom = blocks(jblock)%istart, blocks(jblock)%iend
                   IF (jatom < iatom) CYCLE
                   jkind = kind_of(jatom)
                   nsetb = basis_parameter(jkind)%nset
