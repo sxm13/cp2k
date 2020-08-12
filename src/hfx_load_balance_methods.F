@@ -1766,13 +1766,13 @@ CONTAINS
 !>      08.2009 created Joost VandeVondele
 !> \author Joost VandeVondele
 ! **************************************************************************************************
-   FUNCTION cost_model(nsa, nsb, nsc, nsd, npgfa, npgfb, npgfc, npgfd, ratio, p1, p2, p3) RESULT(res)
+   PURE FUNCTION cost_model(nsa, nsb, nsc, nsd, npgfa, npgfb, npgfc, npgfd, ratio, p1, p2, p3) RESULT(res)
       IMPLICIT NONE
-      REAL(KIND=dp) :: estimate1, estimate2, estimate, ratio, switch, mu, sigma
-      INTEGER(KIND=int_8) :: res
+      INTEGER, INTENT(IN)   :: nsa, nsb, nsc, nsd, npgfa, npgfb, npgfc, npgfd
+      REAL(KIND=dp), INTENT(IN) :: ratio
       REAL(KIND=dp), INTENT(IN) :: p1(12), p2(12), p3(2)
-
-      INTEGER   :: nsa, nsb, nsc, nsd, npgfa, npgfb, npgfc, npgfd
+      REAL(KIND=dp) :: estimate1, estimate2, estimate, switch, mu, sigma
+      INTEGER(KIND=int_8) :: res
 
       estimate1 = estimate_basic(p1)
       estimate2 = estimate_basic(p2)
@@ -1789,8 +1789,8 @@ CONTAINS
 !> \param p ...
 !> \return ...
 ! **************************************************************************************************
-      REAL(KIND=dp) FUNCTION estimate_basic(p) RESULT(res)
-      REAL(KIND=dp)                                      :: p(12)
+      REAL(KIND=dp) PURE FUNCTION estimate_basic(p) RESULT(res)
+      REAL(KIND=dp), INTENT(IN)                          :: p(12)
 
       REAL(KIND=dp)                                      :: p1, p10, p11, p12, p2, p3, p4, p5, p6, &
                                                             p7, p8, p9
@@ -1813,9 +1813,9 @@ CONTAINS
 !> \param a2 ...
 !> \return ...
 ! **************************************************************************************************
-      REAL(KIND=dp) FUNCTION poly2(x, a0, a1, a2)
-      INTEGER                                            :: x
-      REAL(KIND=dp)                                      :: a0, a1, a2
+      REAL(KIND=dp) PURE FUNCTION poly2(x, a0, a1, a2)
+      INTEGER, INTENT(IN)                                :: x
+      REAL(KIND=dp), INTENT(IN)                          :: a0, a1, a2
 
          poly2 = a0 + a1*x + a2*x*x
       END FUNCTION poly2
