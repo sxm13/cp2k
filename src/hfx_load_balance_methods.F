@@ -2181,9 +2181,9 @@ CONTAINS
 
                   IF (max_val2 + actual_pmax_atom < log10_eps_schwarz) CYCLE
                   IF (do_p_screening) THEN
-                     CALL get_pmax_val(ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, &
-                                       iset, jset, kset, lset, &
-                                       pmax_entry, swap_id)
+                     pmax_entry = get_pmax_val(ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, &
+                                               iset, jset, kset, lset, &
+                                               swap_id)
                      IF (eval_type == hfx_do_eval_forces) THEN
                         pmax_entry = log_2 + pmax_entry
                      END IF
