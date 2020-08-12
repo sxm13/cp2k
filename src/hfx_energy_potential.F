@@ -1492,12 +1492,11 @@ CONTAINS
                            nprim_ints = nprim_ints + neris_tmp
 
                            !! Compress the array for storage
-                           spherical_estimate = 0.0_dp
+                           spherical_estimate = TINY(spherical_estimate)
                            DO i = 1, nints
                               spherical_estimate = MAX(spherical_estimate, ABS(primitive_integrals(i)))
                            END DO
 
-                           IF (spherical_estimate == 0.0_dp) spherical_estimate = TINY(spherical_estimate)
                            estimate_to_store_int = EXPONENT(spherical_estimate)
                            estimate_to_store_int = MAX(estimate_to_store_int, -15_int_8)
 
@@ -1649,16 +1648,14 @@ CONTAINS
                               kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
                               iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
                               atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
-                           IF (.NOT. treat_lsd_in_core) THEN
-                              IF (is_unrestricted) THEN
-                                 CALL update_fock_matrix( &
-                                    nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
-                                    fac, symm_fac, full_density_beta(:, 1), full_ks_beta(:, 1), &
-                                    primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
-                                    kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
-                                    iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
-                                    atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
-                              END IF
+                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+                              CALL update_fock_matrix( &
+                                 nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
+                                 fac, symm_fac, full_density_beta(:, 1), full_ks_beta(:, 1), &
+                                 primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
+                                 kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
+                                 iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
+                                 atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
                            END IF
                         ELSE
                            !! Update Kohn-Sham matrix
@@ -1669,16 +1666,14 @@ CONTAINS
                               kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
                               iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
                               atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
-                           IF (.NOT. treat_lsd_in_core) THEN
-                              IF (is_unrestricted) THEN
-                                 CALL update_fock_matrix_as( &
-                                    nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
-                                    fac, symm_fac, full_density_beta(:, 1), full_ks_beta(:, 1), &
-                                    primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
-                                    kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
-                                    iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
-                                    atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
-                              END IF
+                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+                              CALL update_fock_matrix_as( &
+                                 nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
+                                 fac, symm_fac, full_density_beta(:, 1), full_ks_beta(:, 1), &
+                                 primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
+                                 kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
+                                 iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
+                                 atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
                            END IF
                         END IF
                      END DO ! i_set_list_kl
@@ -1846,7 +1841,7 @@ CONTAINS
                         IF (i > j) THEN
                            full_ks_alpha(i, img) = (full_ks_alpha(i, img) + full_ks_alpha(j, img)*afac)
                            full_ks_alpha(j, img) = full_ks_alpha(i, img)*afac
-                           IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) THEN
+                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
                               full_ks_beta(i, img) = (full_ks_beta(i, img) + full_ks_beta(j, img)*afac)
                               full_ks_beta(j, img) = full_ks_beta(i, img)*afac
                            END IF
@@ -1854,7 +1849,7 @@ CONTAINS
                         ! ** For adiabatically rescaled functionals we need the energy coming from the diagonal elements
                         IF (i == j) THEN
                            ene_x_aa_diag = ene_x_aa_diag + full_ks_alpha(i, img)*full_density_alpha(i, img)
-                           IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) THEN
+                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
                               ene_x_bb_diag = ene_x_bb_diag + full_ks_beta(i, img)*full_density_beta(i, img)
                            END IF
                         END IF
@@ -1881,21 +1876,18 @@ CONTAINS
 
          NULLIFY (full_ks_alpha)
          DEALLOCATE (shm_master_x_data%full_ks_alpha)
-         IF (.NOT. treat_lsd_in_core) THEN
-            IF (is_unrestricted) THEN
-               DO img = 1, nkimages
-                  CALL distribute_ks_matrix(para_env, full_ks_beta(:, img), ks_matrix(2, img)%matrix, shm_number_of_p_entries, &
-                                            shm_block_offset, kind_of, basis_parameter, &
-                                            off_diag_fac=0.5_dp, diag_fac=afac)
-               END DO
-               NULLIFY (full_ks_beta)
-               DEALLOCATE (shm_master_x_data%full_ks_beta)
-            END IF
+
+         IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+            DO img = 1, nkimages
+               CALL distribute_ks_matrix(para_env, full_ks_beta(:, img), ks_matrix(2, img)%matrix, shm_number_of_p_entries, &
+                                         shm_block_offset, kind_of, basis_parameter, &
+                                         off_diag_fac=0.5_dp, diag_fac=afac)
+            END DO
+            NULLIFY (full_ks_beta)
+            DEALLOCATE (shm_master_x_data%full_ks_beta)
          END IF
          CALL timestop(handle_dist_ks)
-      END IF
 
-      IF (distribute_fock_matrix) THEN
          !! ** Calculate the exchange energy
          ene_x_aa = 0.0_dp
          DO img = 1, nkimages
@@ -2042,21 +2034,19 @@ CONTAINS
          my_bin_size = 1
       END IF
 
-      IF (my_geo_change) THEN
-         IF (.NOT. memory_parameter%do_all_on_the_fly) THEN
-            DO bin = 1, my_bin_size
-               maxval_cache => actual_x_data%store_ints%maxval_cache(bin)
-               maxval_container => actual_x_data%store_ints%maxval_container(bin)
-               integral_caches => actual_x_data%store_ints%integral_caches(:, bin)
-               integral_containers => actual_x_data%store_ints%integral_containers(:, bin)
-               CALL hfx_flush_last_cache(bits_max_val, maxval_cache, maxval_container, memory_parameter%actual_memory_usage, &
-                                         .FALSE.)
-               DO i = 1, 64
-                  CALL hfx_flush_last_cache(i, integral_caches(i), integral_containers(i), &
-                                            memory_parameter%actual_memory_usage, .FALSE.)
-               END DO
+      IF (my_geo_change .AND. .NOT. memory_parameter%do_all_on_the_fly) THEN
+         DO bin = 1, my_bin_size
+            maxval_cache => actual_x_data%store_ints%maxval_cache(bin)
+            maxval_container => actual_x_data%store_ints%maxval_container(bin)
+            integral_caches => actual_x_data%store_ints%integral_caches(:, bin)
+            integral_containers => actual_x_data%store_ints%integral_containers(:, bin)
+            CALL hfx_flush_last_cache(bits_max_val, maxval_cache, maxval_container, memory_parameter%actual_memory_usage, &
+                                      .FALSE.)
+            DO i = 1, 64
+               CALL hfx_flush_last_cache(i, integral_caches(i), integral_containers(i), &
+                                         memory_parameter%actual_memory_usage, .FALSE.)
             END DO
-         END IF
+         END DO
       END IF
       !! reset all caches except we calculate all on the fly
       IF (.NOT. memory_parameter%do_all_on_the_fly) THEN
