@@ -1222,9 +1222,9 @@ CONTAINS
                         sphi_d_ext_set => sphi_d_ext(:, :, :, lset)
 
                         IF (screen_pmat_forces) THEN
-                           CALL get_pmax_val(ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, &
-                                             iset, jset, kset, lset, &
-                                             pmax_tmp, swap_id)
+                           pmax_tmp = get_pmax_val(ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, &
+                                                   iset, jset, kset, lset, &
+                                                   swap_id)
 
                            log10_pmax = log_2 + pmax_tmp
                         ELSE

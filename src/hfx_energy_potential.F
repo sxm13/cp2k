@@ -1434,13 +1434,11 @@ CONTAINS
                         sphi_d_ext_set => sphi_d_ext(:, :, :, lset)
                         !! get max_vals if we screen on initial density
                         IF (do_p_screening) THEN
-                           CALL get_pmax_val(ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, &
-                                             iset, jset, kset, lset, &
-                                             pmax_entry, swap_id)
+                           log10_pmax = get_pmax_val(ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, &
+                                                     iset, jset, kset, lset, swap_id)
                         ELSE
-                           pmax_entry = 0.0_dp
+                           log10_pmax = 0.0_dp
                         END IF
-                        log10_pmax = pmax_entry
                         max_val2 = max_val2 + log10_pmax
                         IF (max_val2 < log10_eps_schwarz) CYCLE
                         pmax_entry = EXP(log10_pmax*ln_10)
