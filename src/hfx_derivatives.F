@@ -148,7 +148,7 @@ CONTAINS
          storage_counter_integrals, tmp_block, tmp_i8(6)
       INTEGER(int_8), ALLOCATABLE, DIMENSION(:)          :: tmp_task_list_cost
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: atom_of_kind, kind_of, last_sgf_global, &
-                                                            nimages, tmp_index
+                                                            tmp_index
       INTEGER, DIMENSION(:), POINTER :: la_max, la_min, lb_max, lb_min, lc_max, lc_min, ld_max, &
          ld_min, npgfa, npgfb, npgfc, npgfd, nsgfa, nsgfb, nsgfc, nsgfd, shm_block_offset
       INTEGER, DIMENSION(:, :), POINTER :: first_sgfb, nsgfl_a, nsgfl_b, nsgfl_c, nsgfl_d, &
@@ -351,7 +351,7 @@ CONTAINS
 !$OMP  max_val1,max_val2,max_val2_set,maxval_cache,maxval_container,max_val_memory,mem_compression_counter,mem_eris,&
 !$OMP  mem_max_val,memory_parameter,my_bin_id,my_bin_size,my_current_counter,my_istart,my_thread_id,natom,&
 !$OMP  nbits,nblocks,ncob,ncos_max,ncpu,neris_incore,neris_onthefly,neris_tmp,&
-!$OMP  neris_total,nimages,nints,nneighbors,npgfa,npgfb,npgfc,npgfd,&
+!$OMP  neris_total,nints,nneighbors,npgfa,npgfb,npgfc,npgfd,&
 !$OMP  nprim_ints,n_processes,nseta,nsetb,nsgfa,nsgfb,nsgfc,nsgfd,&
 !$OMP  nsgfl_a,nsgfl_b,nsgfl_c,nsgfl_d,nsgf_max,offset_ac_set,offset_ad_set,&
 !$OMP  offset_bc_set,offset_bd_set,pac_buf,pac_buf_beta,pac_buf_resp,pac_buf_resp_beta,pad_buf,pad_buf_beta,pad_buf_resp,&
@@ -619,7 +619,6 @@ CONTAINS
 !$OMP     ATOMIC READ
       tmp_i4 = pgf_product_list_size
       ALLOCATE (pgf_product_list(tmp_i4))
-      ALLOCATE (nimages(max_pgf**2))
 
       DO i = 1, max_pgf**2
          ALLOCATE (pgf_list_ij(i)%image_list(nneighbors))
@@ -1307,7 +1306,7 @@ CONTAINS
                                         sphi_a_ext_set, sphi_b_ext_set, sphi_c_ext_set, sphi_d_ext_set, &
                                         ede_work, ede_work2, ede_work_forces, &
                                         ede_buffer1, ede_buffer2, ede_primitives_tmp, &
-                                        nimages, do_periodic, use_virial, ede_work_virial, ede_work2_virial, &
+                                        do_periodic, use_virial, ede_work_virial, ede_work2_virial, &
                                         ede_primitives_tmp_virial, primitive_forces_virial, &
                                         cartesian_estimate_virial)
 
@@ -1722,8 +1721,6 @@ CONTAINS
 
       DEALLOCATE (ede_work_virial, ede_work2_virial, ede_primitives_tmp_virial)
 
-      DEALLOCATE (nimages)
-
       IF (nspins == 2) THEN
          DEALLOCATE (pbd_buf_beta, pbc_buf_beta, pad_buf_beta, pac_buf_beta)
          IF (with_resp_density) THEN
@@ -1818,7 +1815,6 @@ CONTAINS
 !> \param ede_buffer1 ...
 !> \param ede_buffer2 ...
 !> \param ede_primitives_tmp ...
-!> \param nimages ...
 !> \param do_periodic ...
 !> \param use_virial ...
 !> \param ede_work_virial ...
@@ -1847,7 +1843,7 @@ CONTAINS
                       sphi_a_ext, sphi_b_ext, sphi_c_ext, sphi_d_ext, &
                       ede_work, ede_work2, ede_work_forces, &
                       ede_buffer1, ede_buffer2, ede_primitives_tmp, &
-                      nimages, do_periodic, use_virial, ede_work_virial, &
+                      do_periodic, use_virial, ede_work_virial, &
                       ede_work2_virial, ede_primitives_tmp_virial, primitive_integrals_virial, &
                       cart_estimate_virial)
 
@@ -1883,7 +1879,6 @@ CONTAINS
       REAL(dp), DIMENSION(*)                             :: ede_work, ede_work2, ede_work_forces, &
                                                             ede_buffer1, ede_buffer2, &
                                                             ede_primitives_tmp
-      INTEGER, DIMENSION(*)                              :: nimages
       LOGICAL, INTENT(IN)                                :: do_periodic, use_virial
       REAL(dp), DIMENSION(*)                             :: ede_work_virial, ede_work2_virial, &
                                                             ede_primitives_tmp_virial
@@ -1900,11 +1895,11 @@ CONTAINS
       CALL build_pair_list_pgf(npgfa, npgfb, pgf_list_ij, zeta, zetb, screen1, screen2, &
                                pgf1, R1_pgf, log10_pmax, log10_eps_schwarz, ra, rb, &
                                nelements_ij, &
-                               neighbor_cells, nimages, do_periodic)
+                               neighbor_cells, do_periodic)
       CALL build_pair_list_pgf(npgfc, npgfd, pgf_list_kl, zetc, zetd, screen2, screen1, &
                                pgf2, R2_pgf, log10_pmax, log10_eps_schwarz, rc, rd, &
                                nelements_kl, &
-                               neighbor_cells, nimages, do_periodic)
+                               neighbor_cells, do_periodic)
 
       cart_estimate = 0.0_dp
       primitive_integrals = 0.0_dp
