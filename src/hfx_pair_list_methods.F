@@ -315,7 +315,7 @@ CONTAINS
    END SUBROUTINE build_pgf_product_list
 
 ! **************************************************************************************************
-!> \brief Build list of '(ab|' pairs over all images, filtering negligible contributions.
+!> \brief Build list of primitive Gaussians pairs over all images, filtering negligible contributions
 !> \param npgfa ...
 !> \param npgfb ...
 !> \param list ...
@@ -435,7 +435,6 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief ...
-!> \param natom ...
 !> \param list ...
 !> \param set_list ...
 !> \param i_start ...
@@ -454,11 +453,10 @@ CONTAINS
 !> \param pmax_blocks ...
 !> \param atomic_pair_list ...
 ! **************************************************************************************************
-   SUBROUTINE build_pair_list(natom, list, set_list, i_start, i_end, j_start, j_end, kind_of, basis_parameter, particle_set, &
+   SUBROUTINE build_pair_list(list, set_list, i_start, i_end, j_start, j_end, kind_of, basis_parameter, particle_set, &
                               do_periodic, coeffs_set, coeffs_kind, coeffs_kind_max0, log10_eps_schwarz, cell, &
                               pmax_blocks, atomic_pair_list)
 
-      INTEGER, INTENT(IN)                                :: natom
       TYPE(pair_list_type), INTENT(OUT)                  :: list
       TYPE(pair_set_list_type), DIMENSION(*), &
          INTENT(OUT)                                     :: set_list
@@ -473,7 +471,7 @@ CONTAINS
       REAL(KIND=dp), INTENT(IN)                          :: coeffs_kind_max0, log10_eps_schwarz
       TYPE(cell_type), POINTER                           :: cell
       REAL(dp)                                           :: pmax_blocks
-      LOGICAL, DIMENSION(natom, natom)                   :: atomic_pair_list
+      LOGICAL, DIMENSION(:, :)                           :: atomic_pair_list
 
       INTEGER                                            :: iatom, ikind, iset, jatom, jkind, jset, &
                                                             n_element, nset_ij, nseta, nsetb
@@ -537,7 +535,6 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief ...
-!> \param natom ...
 !> \param atomic_pair_list ...
 !> \param kind_of ...
 !> \param basis_parameter ...
@@ -549,11 +546,10 @@ CONTAINS
 !> \param cell ...
 !> \param blocks ...
 ! **************************************************************************************************
-   SUBROUTINE build_atomic_pair_list(natom, atomic_pair_list, kind_of, basis_parameter, particle_set, &
+   SUBROUTINE build_atomic_pair_list(atomic_pair_list, kind_of, basis_parameter, particle_set, &
                                      do_periodic, coeffs_kind, coeffs_kind_max0, log10_eps_schwarz, cell, &
                                      blocks)
-      INTEGER, INTENT(IN)                                :: natom
-      LOGICAL, DIMENSION(natom, natom)                   :: atomic_pair_list
+      LOGICAL, DIMENSION(:, :)                           :: atomic_pair_list
       INTEGER, DIMENSION(:)                              :: kind_of
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
@@ -605,7 +601,6 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief ...
-!> \param natom ...
 !> \param list ...
 !> \param set_list ...
 !> \param i_start ...
@@ -625,11 +620,10 @@ CONTAINS
 !> \param atomic_pair_list ...
 !> \param skip_atom_symmetry ...
 ! **************************************************************************************************
-   SUBROUTINE build_pair_list_mp2(natom, list, set_list, i_start, i_end, j_start, j_end, kind_of, basis_parameter, particle_set, &
+   SUBROUTINE build_pair_list_mp2(list, set_list, i_start, i_end, j_start, j_end, kind_of, basis_parameter, particle_set, &
                                   do_periodic, coeffs_set, coeffs_kind, coeffs_kind_max0, log10_eps_schwarz, cell, &
                                   pmax_blocks, atomic_pair_list, skip_atom_symmetry)
 
-      INTEGER, INTENT(IN)                                :: natom
       TYPE(pair_list_type_mp2)                           :: list
       TYPE(pair_set_list_type), DIMENSION(*), &
          INTENT(OUT)                                     :: set_list
@@ -644,7 +638,7 @@ CONTAINS
       REAL(KIND=dp), INTENT(IN)                          :: coeffs_kind_max0, log10_eps_schwarz
       TYPE(cell_type), POINTER                           :: cell
       REAL(dp)                                           :: pmax_blocks
-      LOGICAL, DIMENSION(natom, natom)                   :: atomic_pair_list
+      LOGICAL, DIMENSION(:, :)                           :: atomic_pair_list
       LOGICAL, OPTIONAL                                  :: skip_atom_symmetry
 
       INTEGER                                            :: iatom, ikind, iset, jatom, jkind, jset, &

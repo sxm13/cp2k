@@ -1051,7 +1051,7 @@ CONTAINS
       END IF
       shm_atomic_pair_list => actual_x_data%atomic_pair_list
       IF (my_geo_change) THEN
-         CALL build_atomic_pair_list(natom, shm_atomic_pair_list, kind_of, basis_parameter, particle_set, &
+         CALL build_atomic_pair_list(shm_atomic_pair_list, kind_of, basis_parameter, particle_set, &
                                      do_periodic, screen_coeffs_kind, coeffs_kind_max0, log10_eps_schwarz, cell, &
                                      actual_x_data%blocks)
       END IF
@@ -1151,14 +1151,14 @@ CONTAINS
 
             IF (2.0_dp*coeffs_kind_max0 + pmax_blocks < log10_eps_schwarz) CYCLE
 
-            CALL build_pair_list(natom, list_ij, set_list_ij, iatom_start, iatom_end, &
+            CALL build_pair_list(list_ij, set_list_ij, iatom_start, iatom_end, &
                                  jatom_start, jatom_end, &
                                  kind_of, basis_parameter, particle_set, &
                                  do_periodic, screen_coeffs_set, screen_coeffs_kind, &
                                  coeffs_kind_max0, log10_eps_schwarz, cell, pmax_blocks, &
                                  shm_atomic_pair_list)
 
-            CALL build_pair_list(natom, list_kl, set_list_kl, katom_start, katom_end, &
+            CALL build_pair_list(list_kl, set_list_kl, katom_start, katom_end, &
                                  latom_start, latom_end, &
                                  kind_of, basis_parameter, particle_set, &
                                  do_periodic, screen_coeffs_set, screen_coeffs_kind, &

@@ -229,14 +229,14 @@ CONTAINS
       latom_start = 1
       latom_end = natom
 
-      CALL build_pair_list_mp2(natom, list_ij, set_list_ij, iatom_start, iatom_end, &
+      CALL build_pair_list_mp2(list_ij, set_list_ij, iatom_start, iatom_end, &
                                jatom_start, jatom_end, &
                                kind_of, basis_parameter, particle_set, &
                                do_periodic, screen_coeffs_set, screen_coeffs_kind, &
                                coeffs_kind_max0, log10_eps_schwarz, cell, 0.D+00, &
                                shm_atomic_pair_list)
 
-      CALL build_pair_list_mp2(natom, list_kl, set_list_kl, katom_start, katom_end, &
+      CALL build_pair_list_mp2(list_kl, set_list_kl, katom_start, katom_end, &
                                latom_start, latom_end, &
                                kind_of, basis_parameter, particle_set, &
                                do_periodic, screen_coeffs_set, screen_coeffs_kind, &

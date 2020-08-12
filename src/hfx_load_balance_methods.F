@@ -437,7 +437,7 @@ CONTAINS
       CASE (hfx_do_eval_forces)
          atomic_pair_list => x_data%atomic_pair_list_forces
       END SELECT
-      CALL build_atomic_pair_list(natom, atomic_pair_list, kind_of, basis_parameter, particle_set, &
+      CALL build_atomic_pair_list(atomic_pair_list, kind_of, basis_parameter, particle_set, &
                                   do_periodic, coeffs_kind, coeffs_kind_max0, log10_eps_schwarz, cell, &
                                   x_data%blocks)
 
@@ -2002,12 +2002,12 @@ CONTAINS
 
       estimate_block_cost = 0_int_8
 
-      CALL build_pair_list(natom, list_ij, set_list_ij, iatom_start, iatom_end, jatom_start, jatom_end, &
+      CALL build_pair_list(list_ij, set_list_ij, iatom_start, iatom_end, jatom_start, jatom_end, &
                            kind_of, basis_parameter, particle_set, &
                            do_periodic, coeffs_set, coeffs_kind, coeffs_kind_max0, &
                            log10_eps_schwarz, cell, pmax_blocks, atomic_pair_list)
 
-      CALL build_pair_list(natom, list_kl, set_list_kl, katom_start, katom_end, latom_start, latom_end, &
+      CALL build_pair_list(list_kl, set_list_kl, katom_start, katom_end, latom_start, latom_end, &
                            kind_of, basis_parameter, particle_set, &
                            do_periodic, coeffs_set, coeffs_kind, coeffs_kind_max0, &
                            log10_eps_schwarz, cell, pmax_blocks, atomic_pair_list)
