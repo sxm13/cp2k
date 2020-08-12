@@ -177,8 +177,7 @@ CONTAINS
       INTEGER(int_8) :: stor_count_max_val, storage_counter_integrals, subtr_size_mb, tmp_block, &
          tmp_i8(8)
       INTEGER(int_8), ALLOCATABLE, DIMENSION(:)          :: tmp_task_list_cost
-      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, last_sgf_global, nimages, &
-                                                            tmp_index
+      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, last_sgf_global, tmp_index
       INTEGER, DIMENSION(:), POINTER :: la_max, la_min, lb_max, lb_min, lc_max, lc_min, ld_max, &
          ld_min, npgfa, npgfb, npgfc, npgfd, nsgfa, nsgfb, nsgfc, nsgfd, shm_block_offset
       INTEGER, DIMENSION(:, :), POINTER :: first_sgfb, nsgfl_a, nsgfl_b, nsgfl_c, nsgfl_d, &
@@ -392,7 +391,7 @@ CONTAINS
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
 !$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,max_contraction,&
 !$OMP         max_pgf,jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
-!$OMP         pgf_product_list,nimages,ks_fully_occ,subtr_size_mb,use_disk_storage,counter,do_disk_storage,&
+!$OMP         pgf_product_list,ks_fully_occ,subtr_size_mb,use_disk_storage,counter,do_disk_storage,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,eps_schwarz,&
 !$OMP         log10_eps_schwarz,eps_storage,hf_fraction,buffer_overflow,logger,private_lib,last_sgf_global,handle_getp,&
 !$OMP         p_work,fac,handle_load,do_dynamic_load_balancing,my_bin_size,maxval_container,integral_containers,maxval_cache,&
@@ -552,7 +551,6 @@ CONTAINS
 !$OMP ATOMIC READ
       tmp_i4 = pgf_product_list_size
       ALLOCATE (pgf_product_list(tmp_i4))
-      ALLOCATE (nimages(max_pgf**2))
 
       DO i = 1, max_pgf**2
          ALLOCATE (pgf_list_ij(i)%image_list(nneighbors))
@@ -1485,7 +1483,7 @@ CONTAINS
                                          sphi_c_ext_set, &
                                          sphi_d_ext_set, &
                                          ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
-                                         nimages, do_periodic, p_work)
+                                         do_periodic, p_work)
 
                            nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
                            neris_total = neris_total + nints
@@ -2117,8 +2115,6 @@ CONTAINS
 
       DEALLOCATE (ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp)
 
-      DEALLOCATE (nimages)
-
 !$OMP BARRIER
 !$OMP END PARALLEL
 
@@ -2197,7 +2193,6 @@ CONTAINS
 !> \param ee_buffer1 ...
 !> \param ee_buffer2 ...
 !> \param ee_primitives_tmp ...
-!> \param nimages ...
 !> \param do_periodic ...
 !> \param p_work ...
 !> \par History
@@ -2224,7 +2219,7 @@ CONTAINS
                        nsgfl_d, &
                        sphi_a_ext, sphi_b_ext, sphi_c_ext, sphi_d_ext, &
                        ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
-                       nimages, do_periodic, p_work)
+                       do_periodic, p_work)
 
       TYPE(cp_libint_t)                                  :: lib
       REAL(dp), INTENT(IN)                               :: ra(3), rb(3), rc(3), rd(3)
@@ -2256,7 +2251,6 @@ CONTAINS
          sphi_d_ext(sphi_d_u1, sphi_d_u2, sphi_d_u3)
       REAL(dp), DIMENSION(*)                             :: ee_work, ee_work2, ee_buffer1, &
                                                             ee_buffer2, ee_primitives_tmp
-      INTEGER, DIMENSION(*)                              :: nimages
       LOGICAL, INTENT(IN)                                :: do_periodic
       REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
@@ -2268,11 +2262,11 @@ CONTAINS
       CALL build_pair_list_pgf(npgfa, npgfb, pgf_list_ij, zeta, zetb, screen1, screen2, &
                                pgf1, R1_pgf, log10_pmax, log10_eps_schwarz, ra, rb, &
                                nelements_ij, &
-                               neighbor_cells, nimages, do_periodic)
+                               neighbor_cells, do_periodic)
       CALL build_pair_list_pgf(npgfc, npgfd, pgf_list_kl, zetc, zetd, screen2, screen1, &
                                pgf2, R2_pgf, log10_pmax, log10_eps_schwarz, rc, rd, &
                                nelements_kl, &
-                               neighbor_cells, nimages, do_periodic)
+                               neighbor_cells, do_periodic)
 
       cart_estimate = 0.0_dp
       neris_tmp = 0

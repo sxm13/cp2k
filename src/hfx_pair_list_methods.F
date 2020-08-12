@@ -315,7 +315,7 @@ CONTAINS
    END SUBROUTINE build_pgf_product_list
 
 ! **************************************************************************************************
-!> \brief ...
+!> \brief Build list of '(ab|' pairs over all images, filtering negligible contributions.
 !> \param npgfa ...
 !> \param npgfb ...
 !> \param list ...
@@ -329,35 +329,36 @@ CONTAINS
 !> \param log10_eps_schwarz ...
 !> \param ra ...
 !> \param rb ...
-!> \param nelements ...
+!> \param nelements Number of relevant pairs
 !> \param neighbor_cells ...
-!> \param nimages ...
 !> \param do_periodic ...
 ! **************************************************************************************************
    SUBROUTINE build_pair_list_pgf(npgfa, npgfb, list, zeta, zetb, screen1, screen2, pgf, R_pgf, &
                                   log10_pmax, log10_eps_schwarz, ra, rb, nelements, &
-                                  neighbor_cells, nimages, do_periodic)
+                                  neighbor_cells, do_periodic)
       INTEGER, INTENT(IN)                                :: npgfa, npgfb
-      TYPE(hfx_pgf_list), DIMENSION(npgfa*npgfb)         :: list
+      TYPE(hfx_pgf_list), DIMENSION(npgfa*npgfb), &
+         INTENT(INOUT)                                   :: list
       REAL(dp), DIMENSION(1:npgfa), INTENT(IN)           :: zeta
       REAL(dp), DIMENSION(1:npgfb), INTENT(IN)           :: zetb
       REAL(dp), INTENT(IN)                               :: screen1(2), screen2(2)
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
-         POINTER                                         :: pgf, R_pgf
+         INTENT(IN), POINTER                             :: pgf, R_pgf
       REAL(dp), INTENT(IN)                               :: log10_pmax, log10_eps_schwarz, ra(3), &
                                                             rb(3)
       INTEGER, INTENT(OUT)                               :: nelements
-      TYPE(hfx_cell_type), DIMENSION(:), POINTER         :: neighbor_cells
-      INTEGER                                            :: nimages(npgfa*npgfb)
+      TYPE(hfx_cell_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: neighbor_cells
       LOGICAL, INTENT(IN)                                :: do_periodic
 
       INTEGER                                            :: element_counter, i, ipgf, j, jpgf
       REAL(dp)                                           :: AB(3), im_B(3), pgf_max, rab2, Zeta1, &
                                                             Zeta_A, Zeta_B, ZetaInv
 
-      nimages = 0
       ! ** inner loop may never be reached
       nelements = npgfa*npgfb
+      list(1:nelements)%nimages = 0
+
       DO i = 1, SIZE(neighbor_cells)
          IF (do_periodic) THEN
             im_B = rb + neighbor_cells(i)%cell_r(:)
@@ -375,18 +376,15 @@ CONTAINS
                IF (pgf_max + screen2(2) + log10_pmax < log10_eps_schwarz) THEN
                   CYCLE
                END IF
-               nimages(element_counter) = nimages(element_counter) + 1
-               list(element_counter)%image_list(nimages(element_counter))%pgf_max = pgf_max
-               list(element_counter)%image_list(nimages(element_counter))%ra = ra
-               list(element_counter)%image_list(nimages(element_counter))%rb = im_B
-               list(element_counter)%image_list(nimages(element_counter))%rab2 = rab2
+               list(element_counter)%nimages = list(element_counter)%nimages + 1
 
                Zeta_A = zeta(ipgf)
                Zeta_B = zetb(jpgf)
                Zeta1 = Zeta_A + Zeta_B
                ZetaInv = 1.0_dp/Zeta1
 
-               IF (nimages(element_counter) == 1) THEN
+               ! data shared for pairs over different images
+               IF (list(element_counter)%nimages == 1) THEN
                   list(element_counter)%ipgf = ipgf
                   list(element_counter)%jpgf = jpgf
                   list(element_counter)%zetaInv = ZetaInv
@@ -395,23 +393,26 @@ CONTAINS
                   list(element_counter)%zetb = Zeta_B
                END IF
 
-               list(element_counter)%image_list(nimages(element_counter))%S1234 = (-Zeta_A*Zeta_B*ZetaInv*rab2)
-               list(element_counter)%image_list(nimages(element_counter))%P = (Zeta_A*ra + Zeta_B*im_B)*ZetaInv
-               list(element_counter)%image_list(nimages(element_counter))%R = &
-                  MAX(0.0_dp, R_pgf(jpgf, ipgf)%x(1)*rab2 + R_pgf(jpgf, ipgf)%x(2))
-               list(element_counter)%image_list(nimages(element_counter))%ra = ra
-               list(element_counter)%image_list(nimages(element_counter))%rb = im_B
-               list(element_counter)%image_list(nimages(element_counter))%rab2 = rab2
-               list(element_counter)%image_list(nimages(element_counter))%bcell = neighbor_cells(i)%cell
+               ! unique values for each pair & image
+               ASSOCIATE (current=>list(element_counter)%image_list(list(element_counter)%nimages))
+                  current%pgf_max = pgf_max
+                  current%ra = ra
+                  current%rb = im_B
+                  current%rab2 = rab2
+
+                  current%S1234 = (-Zeta_A*Zeta_B*ZetaInv*rab2)
+                  current%P = (Zeta_A*ra + Zeta_B*im_B)*ZetaInv
+                  current%R = MAX(0.0_dp, R_pgf(jpgf, ipgf)%x(1)*rab2 + R_pgf(jpgf, ipgf)%x(2))
+                  current%ra = ra
+                  current%rb = im_B
+                  current%rab2 = rab2
+                  current%bcell = neighbor_cells(i)%cell
+               END ASSOCIATE
             END DO
          END DO
-         nelements = MAX(nelements, element_counter)
       END DO
-      DO j = 1, nelements
-         list(j)%nimages = nimages(j)
-      END DO
-      ! ** Remove unused elements
 
+      ! ** Shift used elements to the beginning of the list
       element_counter = 0
       DO j = 1, nelements
          IF (list(j)%nimages == 0) CYCLE
@@ -428,8 +429,8 @@ CONTAINS
          END DO
       END DO
 
+      ! ... and return the number of occupied elements (pairs) in the list
       nelements = element_counter
-
    END SUBROUTINE build_pair_list_pgf
 
 ! **************************************************************************************************
