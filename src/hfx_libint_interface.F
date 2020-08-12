@@ -420,8 +420,8 @@ CONTAINS
       TYPE(cell_type), POINTER                           :: cell
       REAL(dp)                                           :: tmp_max_all_virial
 
-      INTEGER                                            :: a_mysize(1), i, j, k, l, m, m_max, &
-                                                            mysize, n, p1, p2, p3, p4, perm_case
+      INTEGER                                            :: i, j, k, l, m, m_max, mysize, n, p1, p2, &
+                                                            p3, p4, perm_case
       REAL(dp)                                           :: A(3), AB(3), B(3), C(3), CD(3), D(3), &
                                                             P(3), Q(3), Rho, RhoInv, scoord(12), &
                                                             tmp_max, tmp_max_virial, W(3), &
@@ -430,7 +430,6 @@ CONTAINS
       m_max = n_a + n_b + n_c + n_d
       m_max = m_max + 1
       mysize = ncoa*ncob*ncoc*ncod
-      a_mysize = mysize
 
       work = 0.0_dp
       work2 = 0.0_dp
@@ -471,7 +470,7 @@ CONTAINS
                                   Zeta_A, Zeta_B, Zeta_C, Zeta_D, &
                                   ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
                                   P, Q, W, m_max, pgf_product_list(i)%Fm)
-            CALL cp_libint_get_derivs(n_d, n_c, n_b, n_a, deriv, work_forces, a_mysize)
+            CALL cp_libint_get_derivs(n_d, n_c, n_b, n_a, deriv, work_forces, mysize)
             DO k = 4, 6
                DO j = 1, mysize
                   work_forces(j, k) = -1.0_dp*(work_forces(j, k - 3) + &
@@ -566,7 +565,7 @@ CONTAINS
                                   Zeta_B, Zeta_A, Zeta_C, Zeta_D, &
                                   ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
                                   P, Q, W, m_max, pgf_product_list(i)%Fm)
-            CALL cp_libint_get_derivs(n_d, n_c, n_a, n_b, deriv, work_forces, a_mysize)
+            CALL cp_libint_get_derivs(n_d, n_c, n_a, n_b, deriv, work_forces, mysize)
             DO k = 4, 6
                DO j = 1, mysize
                   work_forces(j, k) = -1.0_dp*(work_forces(j, k - 3) + &
@@ -661,7 +660,7 @@ CONTAINS
                                   Zeta_A, Zeta_B, Zeta_D, Zeta_C, &
                                   ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
                                   P, Q, W, m_max, pgf_product_list(i)%Fm)
-            CALL cp_libint_get_derivs(n_c, n_d, n_b, n_a, deriv, work_forces, a_mysize)
+            CALL cp_libint_get_derivs(n_c, n_d, n_b, n_a, deriv, work_forces, mysize)
             DO k = 4, 6
                DO j = 1, mysize
                   work_forces(j, k) = -1.0_dp*(work_forces(j, k - 3) + &
@@ -755,7 +754,7 @@ CONTAINS
                                   Zeta_B, Zeta_A, Zeta_D, Zeta_C, &
                                   ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
                                   P, Q, W, m_max, pgf_product_list(i)%Fm)
-            CALL cp_libint_get_derivs(n_c, n_d, n_a, n_b, deriv, work_forces, a_mysize)
+            CALL cp_libint_get_derivs(n_c, n_d, n_a, n_b, deriv, work_forces, mysize)
             DO k = 4, 6
                DO j = 1, mysize
                   work_forces(j, k) = -1.0_dp*(work_forces(j, k - 3) + &
@@ -849,7 +848,7 @@ CONTAINS
                                   Zeta_C, Zeta_D, Zeta_A, Zeta_B, &
                                   EtaInv, ZetaInv, ZetapEtaInv, Rho, RhoInv, &
                                   Q, P, W, m_max, pgf_product_list(i)%Fm)
-            CALL cp_libint_get_derivs(n_b, n_a, n_d, n_c, deriv, work_forces, a_mysize)
+            CALL cp_libint_get_derivs(n_b, n_a, n_d, n_c, deriv, work_forces, mysize)
             DO k = 4, 6
                DO j = 1, mysize
                   work_forces(j, k) = -1.0_dp*(work_forces(j, k - 3) + &
@@ -944,7 +943,7 @@ CONTAINS
                                   Zeta_C, Zeta_D, Zeta_B, Zeta_A, &
                                   EtaInv, ZetaInv, ZetapEtaInv, Rho, RhoInv, &
                                   Q, P, W, m_max, pgf_product_list(i)%Fm)
-            CALL cp_libint_get_derivs(n_a, n_b, n_d, n_c, deriv, work_forces, a_mysize)
+            CALL cp_libint_get_derivs(n_a, n_b, n_d, n_c, deriv, work_forces, mysize)
             DO k = 4, 6
                DO j = 1, mysize
                   work_forces(j, k) = -1.0_dp*(work_forces(j, k - 3) + &
@@ -1039,7 +1038,7 @@ CONTAINS
                                   Zeta_D, Zeta_C, Zeta_A, Zeta_B, &
                                   EtaInv, ZetaInv, ZetapEtaInv, Rho, RhoInv, &
                                   Q, P, W, m_max, pgf_product_list(i)%Fm)
-            CALL cp_libint_get_derivs(n_b, n_a, n_c, n_d, deriv, work_forces, a_mysize)
+            CALL cp_libint_get_derivs(n_b, n_a, n_c, n_d, deriv, work_forces, mysize)
             DO k = 4, 6
                DO j = 1, mysize
                   work_forces(j, k) = -1.0_dp*(work_forces(j, k - 3) + &
@@ -1134,7 +1133,7 @@ CONTAINS
                                   Zeta_D, Zeta_C, Zeta_B, Zeta_A, &
                                   EtaInv, ZetaInv, ZetapEtaInv, Rho, RhoInv, &
                                   Q, P, W, m_max, pgf_product_list(i)%Fm)
-            CALL cp_libint_get_derivs(n_a, n_b, n_c, n_d, deriv, work_forces, a_mysize)
+            CALL cp_libint_get_derivs(n_a, n_b, n_c, n_d, deriv, work_forces, mysize)
             DO k = 4, 6
                DO j = 1, mysize
                   work_forces(j, k) = -1.0_dp*(work_forces(j, k - 3) + &
@@ -1305,11 +1304,10 @@ CONTAINS
       REAL(dp)                                           :: R1, R2
       REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
-      INTEGER                                            :: a_mysize(1), i, m_max, mysize, perm_case
+      INTEGER                                            :: i, m_max, mysize, perm_case
 
       m_max = n_a + n_b + n_c + n_d
       mysize = nco(n_a)*nco(n_b)*nco(n_c)*nco(n_d)
-      a_mysize = mysize
 
       IF (m_max /= 0) THEN
          perm_case = 1
@@ -1328,7 +1326,7 @@ CONTAINS
             CALL build_quartet_data_screen(A, B, C, D, Zeta_A, Zeta_B, Zeta_C, Zeta_D, m_max, &
                                            potential_parameter, libint, R1, R2)
 
-            CALL cp_libint_get_eris(n_d, n_c, n_b, n_a, libint, p_work, a_mysize)
+            CALL cp_libint_get_eris(n_d, n_c, n_b, n_a, libint, p_work, mysize)
             DO i = 1, mysize
                max_val = MAX(max_val, ABS(p_work(i)))
             END DO
@@ -1336,7 +1334,7 @@ CONTAINS
             CALL build_quartet_data_screen(B, A, C, D, Zeta_B, Zeta_A, Zeta_C, Zeta_D, m_max, &
                                            potential_parameter, libint, R1, R2)
 
-            CALL cp_libint_get_eris(n_d, n_c, n_a, n_b, libint, p_work, a_mysize)
+            CALL cp_libint_get_eris(n_d, n_c, n_a, n_b, libint, p_work, mysize)
             DO i = 1, mysize
                max_val = MAX(max_val, ABS(p_work(i)))
             END DO
@@ -1344,7 +1342,7 @@ CONTAINS
             CALL build_quartet_data_screen(A, B, D, C, Zeta_A, Zeta_B, Zeta_D, Zeta_C, m_max, &
                                            potential_parameter, libint, R1, R2)
 
-            CALL cp_libint_get_eris(n_c, n_d, n_b, n_a, libint, p_work, a_mysize)
+            CALL cp_libint_get_eris(n_c, n_d, n_b, n_a, libint, p_work, mysize)
             DO i = 1, mysize
                max_val = MAX(max_val, ABS(p_work(i)))
             END DO
@@ -1352,7 +1350,7 @@ CONTAINS
             CALL build_quartet_data_screen(B, A, D, C, Zeta_B, Zeta_A, Zeta_D, Zeta_C, m_max, &
                                            potential_parameter, libint, R1, R2)
 
-            CALL cp_libint_get_eris(n_c, n_d, n_a, n_b, libint, p_work, a_mysize)
+            CALL cp_libint_get_eris(n_c, n_d, n_a, n_b, libint, p_work, mysize)
             DO i = 1, mysize
                max_val = MAX(max_val, ABS(p_work(i)))
             END DO
@@ -1360,7 +1358,7 @@ CONTAINS
             CALL build_quartet_data_screen(C, D, A, B, Zeta_C, Zeta_D, Zeta_A, Zeta_B, m_max, &
                                            potential_parameter, libint, R1, R2)
 
-            CALL cp_libint_get_eris(n_b, n_a, n_d, n_c, libint, p_work, a_mysize)
+            CALL cp_libint_get_eris(n_b, n_a, n_d, n_c, libint, p_work, mysize)
             DO i = 1, mysize
                max_val = MAX(max_val, ABS(p_work(i)))
             END DO
@@ -1368,7 +1366,7 @@ CONTAINS
             CALL build_quartet_data_screen(C, D, B, A, Zeta_C, Zeta_D, Zeta_B, Zeta_A, m_max, &
                                            potential_parameter, libint, R1, R2)
 
-            CALL cp_libint_get_eris(n_a, n_b, n_d, n_c, libint, p_work, a_mysize)
+            CALL cp_libint_get_eris(n_a, n_b, n_d, n_c, libint, p_work, mysize)
             DO i = 1, mysize
                max_val = MAX(max_val, ABS(p_work(i)))
             END DO
@@ -1376,7 +1374,7 @@ CONTAINS
             CALL build_quartet_data_screen(D, C, A, B, Zeta_D, Zeta_C, Zeta_A, Zeta_B, m_max, &
                                            potential_parameter, libint, R1, R2)
 
-            CALL cp_libint_get_eris(n_b, n_a, n_c, n_d, libint, p_work, a_mysize)
+            CALL cp_libint_get_eris(n_b, n_a, n_c, n_d, libint, p_work, mysize)
             DO i = 1, mysize
                max_val = MAX(max_val, ABS(p_work(i)))
             END DO
@@ -1384,7 +1382,7 @@ CONTAINS
             CALL build_quartet_data_screen(D, C, B, A, Zeta_D, Zeta_C, Zeta_B, Zeta_A, m_max, &
                                            potential_parameter, libint, R1, R2)
 
-            CALL cp_libint_get_eris(n_a, n_b, n_c, n_d, libint, p_work, a_mysize)
+            CALL cp_libint_get_eris(n_a, n_b, n_c, n_d, libint, p_work, mysize)
             DO i = 1, mysize
                max_val = MAX(max_val, ABS(p_work(i)))
             END DO
@@ -1483,8 +1481,8 @@ CONTAINS
          nl_c, nsod*nl_d)                                :: primitives_tmp
       REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
-      INTEGER                                            :: a_mysize(1), i, j, k, l, m_max, mysize, &
-                                                            p1, p2, p3, p4, perm_case
+      INTEGER                                            :: i, j, k, l, m_max, mysize, p1, p2, p3, &
+                                                            p4, perm_case
       REAL(dp)                                           :: A(3), AB(3), B(3), C(3), CD(3), D(3), &
                                                             P(3), Q(3), Rho, RhoInv, W(3), &
                                                             ZetapEtaInv
@@ -1492,8 +1490,6 @@ CONTAINS
 
       m_max = n_a + n_b + n_c + n_d
       mysize = ncoa*ncob*ncoc*ncod
-      a_mysize = mysize
-
       work = 0.0_dp
       IF (m_max /= 0) THEN
          perm_case = 1
@@ -1525,7 +1521,7 @@ CONTAINS
 
                CALL build_quartet_data(libint, A, B, C, D, ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                        P, Q, W, m_max, F)
-               CALL cp_libint_get_eris(n_d, n_c, n_b, n_a, libint, p_work, a_mysize)
+               CALL cp_libint_get_eris(n_d, n_c, n_b, n_a, libint, p_work, mysize)
                work(1:mysize) = work(1:mysize) + p_work(1:mysize)
                neris = neris + mysize
             END DO
@@ -1570,7 +1566,7 @@ CONTAINS
                                        ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                        P, Q, W, m_max, F)
 
-               CALL cp_libint_get_eris(n_d, n_c, n_a, n_b, libint, p_work, a_mysize)
+               CALL cp_libint_get_eris(n_d, n_c, n_a, n_b, libint, p_work, mysize)
                work(1:mysize) = work(1:mysize) + p_work(1:mysize)
                neris = neris + mysize
             END DO
@@ -1615,7 +1611,7 @@ CONTAINS
                                        ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                        P, Q, W, m_max, F)
 
-               CALL cp_libint_get_eris(n_c, n_d, n_b, n_a, libint, p_work, a_mysize)
+               CALL cp_libint_get_eris(n_c, n_d, n_b, n_a, libint, p_work, mysize)
                work(1:mysize) = work(1:mysize) + p_work(1:mysize)
                neris = neris + mysize
             END DO
@@ -1660,7 +1656,7 @@ CONTAINS
                                        ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                        P, Q, W, m_max, F)
 
-               CALL cp_libint_get_eris(n_c, n_d, n_a, n_b, libint, p_work, a_mysize)
+               CALL cp_libint_get_eris(n_c, n_d, n_a, n_b, libint, p_work, mysize)
                work(1:mysize) = work(1:mysize) + p_work(1:mysize)
                neris = neris + mysize
             END DO
@@ -1705,7 +1701,7 @@ CONTAINS
                                        EtaInv, ZetaInv, ZetapEtaInv, Rho, &
                                        Q, P, W, m_max, F)
 
-               CALL cp_libint_get_eris(n_b, n_a, n_d, n_c, libint, p_work, a_mysize)
+               CALL cp_libint_get_eris(n_b, n_a, n_d, n_c, libint, p_work, mysize)
                work(1:mysize) = work(1:mysize) + p_work(1:mysize)
                neris = neris + mysize
             END DO
@@ -1750,7 +1746,7 @@ CONTAINS
                                        EtaInv, ZetaInv, ZetapEtaInv, Rho, &
                                        Q, P, W, m_max, F)
 
-               CALL cp_libint_get_eris(n_a, n_b, n_d, n_c, libint, p_work, a_mysize)
+               CALL cp_libint_get_eris(n_a, n_b, n_d, n_c, libint, p_work, mysize)
                work(1:mysize) = work(1:mysize) + p_work(1:mysize)
                neris = neris + mysize
             END DO
@@ -1795,7 +1791,7 @@ CONTAINS
                                        EtaInv, ZetaInv, ZetapEtaInv, Rho, &
                                        Q, P, W, m_max, F)
 
-               CALL cp_libint_get_eris(n_b, n_a, n_c, n_d, libint, p_work, a_mysize)
+               CALL cp_libint_get_eris(n_b, n_a, n_c, n_d, libint, p_work, mysize)
                work(1:mysize) = work(1:mysize) + p_work(1:mysize)
                neris = neris + mysize
             END DO
@@ -1840,7 +1836,7 @@ CONTAINS
                                        EtaInv, ZetaInv, ZetapEtaInv, Rho, &
                                        Q, P, W, m_max, F)
 
-               CALL cp_libint_get_eris(n_a, n_b, n_c, n_d, libint, p_work, a_mysize)
+               CALL cp_libint_get_eris(n_a, n_b, n_c, n_d, libint, p_work, mysize)
                work(1:mysize) = work(1:mysize) + p_work(1:mysize)
                neris = neris + mysize
             END DO

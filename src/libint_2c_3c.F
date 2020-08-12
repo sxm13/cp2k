@@ -120,8 +120,10 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'eri_3center', routineP = moduleN//':'//routineN
 
-      INTEGER :: a_mysize(1), a_offset, a_start, b_offset, b_start, c_offset, c_start, i, ipgf, j, &
-         jpgf, k, kpgf, li, lj, lk, ncoa, ncob, ncoc, op, p1, p2, p3
+      INTEGER                                            :: a_offset, a_start, b_offset, b_start, &
+                                                            c_offset, c_start, i, ipgf, j, jpgf, &
+                                                            k, kpgf, li, lj, lk, ncoa, ncob, ncoc, &
+                                                            op, p1, p2, p3
       REAL(dp)                                           :: dr_ab, dr_ac, dr_bc, zeti, zetj, zetk
       REAL(dp), DIMENSION(:), POINTER                    :: p_work
       TYPE(params_3c), POINTER                           :: params
@@ -187,8 +189,7 @@ CONTAINS
                         c_offset = c_start + ncoset(lk - 1)
                         ncoc = nco(lk)
 
-                        a_mysize(1) = ncoa*ncob*ncoc
-                        CALL cp_libint_get_3eris(li, lj, lk, lib, p_work, a_mysize)
+                        CALL cp_libint_get_3eris(li, lj, lk, lib, p_work, ncoa*ncob*ncoc)
 
                         IF (PRESENT(int_abc_ext)) THEN
                            DO k = 1, ncoc
@@ -232,8 +233,7 @@ CONTAINS
                         c_offset = c_start + ncoset(lk - 1)
                         ncoc = nco(lk)
 
-                        a_mysize(1) = ncoa*ncob*ncoc
-                        CALL cp_libint_get_3eris(lj, li, lk, lib, p_work, a_mysize)
+                        CALL cp_libint_get_3eris(lj, li, lk, lib, p_work, ncoa*ncob*ncoc)
 
                         IF (PRESENT(int_abc_ext)) THEN
                            DO k = 1, ncoc
@@ -434,9 +434,9 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'eri_2center', routineP = moduleN//':'//routineN
 
-      INTEGER                                            :: a_mysize(1), a_offset, a_start, &
-                                                            b_offset, b_start, i, ipgf, j, jpgf, &
-                                                            li, lj, ncoa, ncob, p1, p2
+      INTEGER                                            :: a_offset, a_start, b_offset, b_start, i, &
+                                                            ipgf, j, jpgf, li, lj, ncoa, ncob, p1, &
+                                                            p2
       REAL(dp)                                           :: dr_ab, zeti, zetj
       REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
@@ -472,8 +472,7 @@ CONTAINS
                   b_offset = b_start + ncoset(lj - 1)
                   ncob = nco(lj)
 
-                  a_mysize(1) = ncoa*ncob
-                  CALL cp_libint_get_2eris(li, lj, lib, p_work, a_mysize)
+                  CALL cp_libint_get_2eris(li, lj, lib, p_work, ncoa*ncob)
 
                   DO j = 1, ncob
                      p1 = (j - 1)*ncoa
@@ -586,4 +585,3 @@ CONTAINS
    END SUBROUTINE set_params_2c
 
 END MODULE libint_2c_3c
-

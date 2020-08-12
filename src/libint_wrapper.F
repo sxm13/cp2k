@@ -324,13 +324,13 @@ CONTAINS
 !> \param n_a ...
 !> \param lib ...
 !> \param p_work ...
-!> \param a_mysize ...
+!> \param mysize ...
 ! **************************************************************************************************
-   SUBROUTINE cp_libint_get_eris(n_d, n_c, n_b, n_a, lib, p_work, a_mysize)
+   SUBROUTINE cp_libint_get_eris(n_d, n_c, n_b, n_a, lib, p_work, mysize)
       INTEGER, INTENT(IN)                                :: n_d, n_c, n_b, n_a
-      TYPE(cp_libint_t)                                  :: lib
-      REAL(dp), DIMENSION(:), POINTER                    :: p_work
-      INTEGER                                            :: a_mysize(1)
+      TYPE(cp_libint_t), INTENT(INOUT)                   :: lib
+      REAL(dp), DIMENSION(:), POINTER, INTENT(OUT)       :: p_work
+      INTEGER, INTENT(IN)                                :: mysize
 
 #if(__LIBINT)
       PROCEDURE(libint2_build), POINTER                  :: pbuild
@@ -338,7 +338,7 @@ CONTAINS
       CALL C_F_PROCPOINTER(libint2_build_eri(n_d, n_c, n_b, n_a), pbuild)
       CALL pbuild(lib%prv)
 
-      CALL C_F_POINTER(lib%prv(1)%targets(1), p_work, SHAPE=a_mysize)
+      CALL C_F_POINTER(lib%prv(1)%targets(1), p_work, SHAPE=[mysize])
 #else
       MARK_USED(n_d)
       MARK_USED(n_c)
@@ -346,7 +346,7 @@ CONTAINS
       MARK_USED(n_a)
       MARK_USED(lib)
       MARK_USED(p_work)
-      MARK_USED(a_mysize)
+      MARK_USED(mysize)
       CPABORT("This CP2K executable has not been linked against the required library libint.")
 #endif
 
@@ -359,13 +359,13 @@ CONTAINS
 !> \param n_a ...
 !> \param lib ...
 !> \param p_work ...
-!> \param a_mysize ...
+!> \param mysize ...
 ! **************************************************************************************************
-   SUBROUTINE cp_libint_get_3eris(n_c, n_b, n_a, lib, p_work, a_mysize)
+   SUBROUTINE cp_libint_get_3eris(n_c, n_b, n_a, lib, p_work, mysize)
       INTEGER, INTENT(IN)                                :: n_c, n_b, n_a
-      TYPE(cp_libint_t)                                  :: lib
-      REAL(dp), DIMENSION(:), POINTER                    :: p_work
-      INTEGER                                            :: a_mysize(1)
+      TYPE(cp_libint_t), INTENT(INOUT)                   :: lib
+      REAL(dp), DIMENSION(:), POINTER, INTENT(OUT)       :: p_work
+      INTEGER, INTENT(IN)                                :: mysize
 
 #if(__LIBINT)
       PROCEDURE(libint2_build), POINTER                  :: pbuild
@@ -373,14 +373,14 @@ CONTAINS
       CALL C_F_PROCPOINTER(libint2_build_3eri(n_c, n_b, n_a), pbuild)
       CALL pbuild(lib%prv)
 
-      CALL C_F_POINTER(lib%prv(1)%targets(1), p_work, SHAPE=a_mysize)
+      CALL C_F_POINTER(lib%prv(1)%targets(1), p_work, SHAPE=[mysize])
 #else
       MARK_USED(n_c)
       MARK_USED(n_b)
       MARK_USED(n_a)
       MARK_USED(lib)
       MARK_USED(p_work)
-      MARK_USED(a_mysize)
+      MARK_USED(mysize)
       CPABORT("This CP2K executable has not been linked against the required library libint.")
 #endif
 
@@ -393,13 +393,13 @@ CONTAINS
 !> \param n_a ...
 !> \param lib ...
 !> \param p_work ...
-!> \param a_mysize ...
+!> \param mysize ...
 ! **************************************************************************************************
-   SUBROUTINE cp_libint_get_2eris(n_b, n_a, lib, p_work, a_mysize)
+   SUBROUTINE cp_libint_get_2eris(n_b, n_a, lib, p_work, mysize)
       INTEGER, INTENT(IN)                                :: n_b, n_a
-      TYPE(cp_libint_t)                                  :: lib
-      REAL(dp), DIMENSION(:), POINTER                    :: p_work
-      INTEGER                                            :: a_mysize(1)
+      TYPE(cp_libint_t), INTENT(INOUT)                                  :: lib
+      REAL(dp), DIMENSION(:), POINTER, INTENT(OUT)                    :: p_work
+      INTEGER, INTENT(IN)                                            :: mysize
 
 #if(__LIBINT)
       PROCEDURE(libint2_build), POINTER                  :: pbuild
@@ -407,13 +407,13 @@ CONTAINS
       CALL C_F_PROCPOINTER(libint2_build_2eri(n_b, n_a), pbuild)
       CALL pbuild(lib%prv)
 
-      CALL C_F_POINTER(lib%prv(1)%targets(1), p_work, SHAPE=a_mysize)
+      CALL C_F_POINTER(lib%prv(1)%targets(1), p_work, SHAPE=[mysize])
 #else
       MARK_USED(n_b)
       MARK_USED(n_a)
       MARK_USED(lib)
       MARK_USED(p_work)
-      MARK_USED(a_mysize)
+      MARK_USED(mysize)
       CPABORT("This CP2K executable has not been linked against the required library libint.")
 #endif
 
@@ -427,14 +427,14 @@ CONTAINS
 !> \param n_a ...
 !> \param lib ...
 !> \param work_forces ...
-!> \param a_mysize ...
+!> \param mysize ...
 ! **************************************************************************************************
-   SUBROUTINE cp_libint_get_derivs(n_d, n_c, n_b, n_a, lib, work_forces, a_mysize)
+   SUBROUTINE cp_libint_get_derivs(n_d, n_c, n_b, n_a, lib, work_forces, mysize)
       INTEGER, INTENT(IN)                                :: n_d, n_c, n_b, n_a
-      TYPE(cp_libint_t)                                  :: lib
+      TYPE(cp_libint_t), INTENT(INOUT)                                  :: lib
       REAL(dp), DIMENSION(nco(n_a)*nco(n_b)*nco(n_c)*nco &
-                          (n_d), 12)                                      :: work_forces
-      INTEGER                                            :: a_mysize(1)
+                          (n_d), 12), INTENT(INOUT)                                      :: work_forces
+      INTEGER, INTENT(IN)                                            :: mysize
 
 #if(__LIBINT)
       REAL(dp), DIMENSION(:), POINTER                    :: p_work
@@ -449,8 +449,8 @@ CONTAINS
 
       DO k = 1, 12
          IF (k == 4 .OR. k == 5 .OR. k == 6) CYCLE
-         CALL C_F_POINTER(lib%prv(1)%targets(k), p_work, SHAPE=a_mysize)
-         DO i = 1, a_mysize(1)
+         CALL C_F_POINTER(lib%prv(1)%targets(k), p_work, SHAPE=[mysize])
+         DO i = 1, mysize
             work_forces(i, k) = p_work(i)
          ENDDO
       ENDDO
@@ -461,7 +461,7 @@ CONTAINS
       MARK_USED(n_a)
       MARK_USED(lib)
       MARK_USED(work_forces)
-      MARK_USED(a_mysize)
+      MARK_USED(mysize)
       CPABORT("This CP2K executable has not been linked against the required library libint.")
 #endif
 
