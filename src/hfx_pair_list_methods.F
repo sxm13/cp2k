@@ -48,16 +48,16 @@ MODULE hfx_pair_list_methods
 CONTAINS
 
 ! **************************************************************************************************
-!> \brief ...
+!> \brief Based on pgf pair lists, build a product pair list (over all images) with negligible contributions filtered
 !> \param list1 ...
 !> \param list2 ...
 !> \param product_list ...
-!> \param nproducts ...
+!> \param nproducts The final number of products in the list
 !> \param log10_pmax ...
 !> \param log10_eps_schwarz ...
 !> \param neighbor_cells ...
 !> \param cell ...
-!> \param potential_parameter ...
+!> \param potential_parameter potential/metric to be used
 !> \param m_max ...
 !> \param do_periodic ...
 ! **************************************************************************************************
@@ -65,23 +65,24 @@ CONTAINS
                                      log10_pmax, log10_eps_schwarz, neighbor_cells, &
                                      cell, potential_parameter, m_max, do_periodic)
 
-      TYPE(hfx_pgf_list)                                 :: list1, list2
+      TYPE(hfx_pgf_list), INTENT(IN)                     :: list1, list2
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
          DIMENSION(:), INTENT(INOUT)                     :: product_list
       INTEGER, INTENT(OUT)                               :: nproducts
       REAL(dp), INTENT(IN)                               :: log10_pmax, log10_eps_schwarz
-      TYPE(hfx_cell_type), DIMENSION(:), POINTER         :: neighbor_cells
-      TYPE(cell_type), POINTER                           :: cell
-      TYPE(hfx_potential_type)                           :: potential_parameter
+      TYPE(hfx_cell_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: neighbor_cells
+      TYPE(cell_type), INTENT(IN), POINTER               :: cell
+      TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
       INTEGER, INTENT(IN)                                :: m_max
       LOGICAL, INTENT(IN)                                :: do_periodic
 
       INTEGER                                            :: i, j, k, l, nimages1, nimages2, tmp_i4
       LOGICAL                                            :: use_gamma
-      REAL(dp) :: C11(3), den, Eta, EtaInv, factor, Fm(prim_data_f_size), G(3), num, omega2, &
-         omega_corr, omega_corr2, P(3), pgf_max_1, pgf_max_2, PQ(3), Q(3), R, R1, R2, ra(3), &
-         rb(3), rc(3), rd(3), Rho, RhoInv, rpq2, S1234, S1234a, S1234b, shift(3), ssss, T, &
-         temp(3), temp_CC(3), temp_DD(3), tmp, tmp_D(3), W(3), Zeta1, Zeta_C, Zeta_D, ZetapEtaInv
+      REAL(dp) :: den, Eta, EtaInv, factor, Fm(prim_data_f_size), G(3), im_rc(3), im_rd(3), num, &
+         omega2, omega_corr, omega_corr2, P(3), pgf_max_1, pgf_max_2, PQ(3), Q(3), R, R1, R2, &
+         ra(3), rb(3), rc(3), rd(3), Rho, RhoInv, rpq2, S1234, S1234a, S1234b, shift(3), ssss, T, &
+         temp(3), tmp, W(3), Zeta1, Zeta_C, Zeta_D, ZetapEtaInv
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
          DIMENSION(:)                                    :: tmp_product_list
 
@@ -93,6 +94,7 @@ CONTAINS
       EtaInv = list2%ZetaInv
       Zeta_C = list2%zeta
       Zeta_D = list2%zetb
+
       DO i = 1, nimages1
          P = list1%image_list(i)%P
          R1 = list1%image_list(i)%R
@@ -108,30 +110,30 @@ CONTAINS
             S1234b = list2%image_list(j)%S1234
             rc = list2%image_list(j)%ra
             rd = list2%image_list(j)%rb
+            im_rc = rc
+            im_rd = rd
 
             ZetapEtaInv = Zeta1 + Eta
             ZetapEtaInv = 1.0_dp/ZetapEtaInv
             Rho = Zeta1*Eta*ZetapEtaInv
             RhoInv = 1.0_dp/Rho
             S1234 = EXP(S1234a + S1234b)
+
             IF (do_periodic) THEN
                temp = P - Q
                PQ = pbc(temp, cell)
                shift = -PQ + temp
-               temp_CC = rc + shift
-               temp_DD = rd + shift
             END IF
 
             DO k = 1, SIZE(neighbor_cells)
                IF (do_periodic) THEN
-                  C11 = temp_CC + neighbor_cells(k)%cell_r(:)
-                  tmp_D = temp_DD + neighbor_cells(k)%cell_r(:)
-               ELSE
-                  C11 = rc
-                  tmp_D = rd
+                  im_rc = rc + shift + neighbor_cells(k)%cell_r(:)
+                  im_rd = rd + shift + neighbor_cells(k)%cell_r(:)
                END IF
-               Q = (Zeta_C*C11 + Zeta_D*tmp_D)*EtaInv
-               rpq2 = (P(1) - Q(1))**2 + (P(2) - Q(2))**2 + (P(3) - Q(3))**2
+
+               Q = (Zeta_C*im_rc + Zeta_D*im_rd)*EtaInv
+               rpq2 = SUM((P - Q)**2)
+
                IF (potential_parameter%potential_type == do_potential_truncated .OR. &
                    potential_parameter%potential_type == do_potential_short .OR. &
                    potential_parameter%potential_type == do_potential_mix_cl_trunc) THEN
@@ -149,9 +151,7 @@ CONTAINS
                   pgf_product_list_size = MAX(pgf_product_list_size, (3*nproducts + 1)/2)
                   tmp_i4 = pgf_product_list_size
 !$OMP END ATOMIC
-                  ALLOCATE (tmp_product_list(SIZE(product_list)))
-                  tmp_product_list(:) = product_list
-                  DEALLOCATE (product_list)
+                  CALL MOVE_ALLOC(product_list, tmp_product_list)
                   ALLOCATE (product_list(tmp_i4))
                   product_list(1:SIZE(tmp_product_list)) = tmp_product_list
                   DEALLOCATE (tmp_product_list)
@@ -298,8 +298,8 @@ CONTAINS
                W = (Zeta1*P + Eta*Q)*ZetapEtaInv
                product_list(nproducts)%ra = ra
                product_list(nproducts)%rb = rb
-               product_list(nproducts)%rc = C11
-               product_list(nproducts)%rd = tmp_D
+               product_list(nproducts)%rc = im_rc
+               product_list(nproducts)%rd = im_rd
                product_list(nproducts)%ZetapEtaInv = ZetapEtaInv
                product_list(nproducts)%Rho = Rho
                product_list(nproducts)%RhoInv = RhoInv
@@ -307,7 +307,7 @@ CONTAINS
                product_list(nproducts)%Q = Q
                product_list(nproducts)%W = W
                product_list(nproducts)%AB = ra - rb
-               product_list(nproducts)%CD = C11 - tmp_D
+               product_list(nproducts)%CD = im_rc - im_rd
             END DO
          END DO
       END DO
@@ -352,8 +352,8 @@ CONTAINS
       LOGICAL, INTENT(IN)                                :: do_periodic
 
       INTEGER                                            :: element_counter, i, ipgf, j, jpgf
-      REAL(dp)                                           :: AB(3), im_B(3), pgf_max, rab2, Zeta1, &
-                                                            Zeta_A, Zeta_B, ZetaInv
+      REAL(dp)                                           :: im_B(3), pgf_max, rab2, Zeta1, Zeta_A, &
+                                                            Zeta_B, ZetaInv
 
       ! ** inner loop may never be reached
       nelements = npgfa*npgfb
@@ -365,9 +365,11 @@ CONTAINS
          ELSE
             im_B = rb
          END IF
-         AB = ra - im_B
-         rab2 = AB(1)**2 + AB(2)**2 + AB(3)**2
+
+         rab2 = SUM((ra - im_B)**2)
+
          IF (screen1(1)*rab2 + screen1(2) + screen2(2) + log10_pmax < log10_eps_schwarz) CYCLE
+
          element_counter = 0
          DO ipgf = 1, npgfa
             DO jpgf = 1, npgfb
@@ -394,25 +396,22 @@ CONTAINS
                END IF
 
                ! unique values for each pair & image
-               ASSOCIATE (current=>list(element_counter)%image_list(list(element_counter)%nimages))
-                  current%pgf_max = pgf_max
-                  current%ra = ra
-                  current%rb = im_B
-                  current%rab2 = rab2
+               ASSOCIATE (pair=>list(element_counter)%image_list(list(element_counter)%nimages))
+                  pair%pgf_max = pgf_max
+                  pair%ra = ra
+                  pair%rb = im_B
+                  pair%rab2 = rab2
 
-                  current%S1234 = (-Zeta_A*Zeta_B*ZetaInv*rab2)
-                  current%P = (Zeta_A*ra + Zeta_B*im_B)*ZetaInv
-                  current%R = MAX(0.0_dp, R_pgf(jpgf, ipgf)%x(1)*rab2 + R_pgf(jpgf, ipgf)%x(2))
-                  current%ra = ra
-                  current%rb = im_B
-                  current%rab2 = rab2
-                  current%bcell = neighbor_cells(i)%cell
+                  pair%S1234 = (-Zeta_A*Zeta_B*ZetaInv*rab2)
+                  pair%P = (Zeta_A*ra + Zeta_B*im_B)*ZetaInv
+                  pair%R = MAX(0.0_dp, R_pgf(jpgf, ipgf)%x(1)*rab2 + R_pgf(jpgf, ipgf)%x(2))
+                  pair%bcell = neighbor_cells(i)%cell
                END ASSOCIATE
             END DO
          END DO
       END DO
 
-      ! ** Shift used elements to the beginning of the list
+      ! ** move used elements to the beginning of the list
       element_counter = 0
       DO j = 1, nelements
          IF (list(j)%nimages == 0) CYCLE
@@ -434,7 +433,7 @@ CONTAINS
    END SUBROUTINE build_pair_list_pgf
 
 ! **************************************************************************************************
-!> \brief ...
+!> \brief Given an atomic_pair_list, generate a pair_list with data and a list of overlapping sets
 !> \param list ...
 !> \param set_list ...
 !> \param i_start ...
@@ -458,32 +457,34 @@ CONTAINS
                               pmax_blocks, atomic_pair_list)
 
       TYPE(pair_list_type), INTENT(OUT)                  :: list
-      TYPE(pair_set_list_type), DIMENSION(*), &
+      TYPE(pair_set_list_type), DIMENSION(:), &
          INTENT(OUT)                                     :: set_list
       INTEGER, INTENT(IN)                                :: i_start, i_end, j_start, j_end
-      INTEGER                                            :: kind_of(*)
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: basis_parameter
+      TYPE(particle_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: particle_set
       LOGICAL, INTENT(IN)                                :: do_periodic
       TYPE(hfx_screen_coeff_type), &
-         DIMENSION(:, :, :, :), POINTER                  :: coeffs_set
-      TYPE(hfx_screen_coeff_type), DIMENSION(:, :)       :: coeffs_kind
+         DIMENSION(:, :, :, :), INTENT(IN), POINTER      :: coeffs_set
+      TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
+         INTENT(IN)                                      :: coeffs_kind
       REAL(KIND=dp), INTENT(IN)                          :: coeffs_kind_max0, log10_eps_schwarz
-      TYPE(cell_type), POINTER                           :: cell
-      REAL(dp)                                           :: pmax_blocks
-      LOGICAL, DIMENSION(:, :)                           :: atomic_pair_list
+      TYPE(cell_type), INTENT(IN), POINTER               :: cell
+      REAL(dp), INTENT(IN)                               :: pmax_blocks
+      LOGICAL, DIMENSION(:, :), INTENT(IN)               :: atomic_pair_list
 
       INTEGER                                            :: iatom, ikind, iset, jatom, jkind, jset, &
                                                             n_element, nset_ij, nseta, nsetb
       REAL(KIND=dp)                                      :: rab2
-      REAL(KIND=dp), DIMENSION(3)                        :: B11, pbc_B, ra, rb, temp
+      REAL(KIND=dp), DIMENSION(3)                        :: ra, rb
 
       n_element = 0
       nset_ij = 0
 
       DO iatom = i_start, i_end
-         DO jatom = j_start, j_end
-            IF (jatom < iatom) CYCLE
+         DO jatom = MAX(iatom, j_start), j_end
             IF (.NOT. atomic_pair_list(jatom, iatom)) CYCLE
 
             ikind = kind_of(iatom)
@@ -495,24 +496,19 @@ CONTAINS
             rb = particle_set(jatom)%r(:)
 
             IF (do_periodic) THEN
-               temp = rb - ra
-               pbc_B = pbc(temp, cell)
-               B11 = ra + pbc_B
-               rab2 = (ra(1) - B11(1))**2 + (ra(2) - B11(2))**2 + (ra(3) - B11(3))**2
-            ELSE
-               rab2 = (ra(1) - rb(1))**2 + (ra(2) - rb(2))**2 + (ra(3) - rb(3))**2
-               B11 = rb ! ra - rb
+               rb = ra + pbc(rb - ra, cell)
             END IF
+
+            rab2 = SUM((ra - rb)**2)
+
             IF ((coeffs_kind(jkind, ikind)%x(1)*rab2 + &
                  coeffs_kind(jkind, ikind)%x(2)) + coeffs_kind_max0 + pmax_blocks < log10_eps_schwarz) CYCLE
 
             n_element = n_element + 1
-            list%elements(n_element)%pair(1) = iatom
-            list%elements(n_element)%pair(2) = jatom
-            list%elements(n_element)%kind_pair(1) = ikind
-            list%elements(n_element)%kind_pair(2) = jkind
+            list%elements(n_element)%pair = [iatom, jatom]
+            list%elements(n_element)%kind_pair = [ikind, jkind]
             list%elements(n_element)%r1 = ra
-            list%elements(n_element)%r2 = B11
+            list%elements(n_element)%r2 = rb
             list%elements(n_element)%dist2 = rab2
             ! build a list of guaranteed overlapping sets
             list%elements(n_element)%set_bounds(1) = nset_ij + 1
@@ -521,8 +517,7 @@ CONTAINS
                   IF (coeffs_set(jset, iset, jkind, ikind)%x(1)*rab2 + coeffs_set(jset, iset, jkind, ikind)%x(2) + &
                       coeffs_kind_max0 + pmax_blocks < log10_eps_schwarz) CYCLE
                   nset_ij = nset_ij + 1
-                  set_list(nset_ij)%pair(1) = iset
-                  set_list(nset_ij)%pair(2) = jset
+                  set_list(nset_ij)%pair = [iset, jset]
                END DO
             END DO
             list%elements(n_element)%set_bounds(2) = nset_ij
@@ -534,7 +529,7 @@ CONTAINS
    END SUBROUTINE build_pair_list
 
 ! **************************************************************************************************
-!> \brief ...
+!> \brief Build an index list of which atoms (i, j) and (j, i) are to be considered pairs
 !> \param atomic_pair_list ...
 !> \param kind_of ...
 !> \param basis_parameter ...
@@ -549,20 +544,24 @@ CONTAINS
    SUBROUTINE build_atomic_pair_list(atomic_pair_list, kind_of, basis_parameter, particle_set, &
                                      do_periodic, coeffs_kind, coeffs_kind_max0, log10_eps_schwarz, cell, &
                                      blocks)
-      LOGICAL, DIMENSION(:, :)                           :: atomic_pair_list
-      INTEGER, DIMENSION(:)                              :: kind_of
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      LOGICAL, DIMENSION(:, :), INTENT(OUT)              :: atomic_pair_list
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: basis_parameter
+      TYPE(particle_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: particle_set
       LOGICAL, INTENT(IN)                                :: do_periodic
-      TYPE(hfx_screen_coeff_type), DIMENSION(:, :)       :: coeffs_kind
+      TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
+         INTENT(IN)                                      :: coeffs_kind
       REAL(KIND=dp), INTENT(IN)                          :: coeffs_kind_max0, log10_eps_schwarz
-      TYPE(cell_type), POINTER                           :: cell
-      TYPE(hfx_block_range_type), DIMENSION(:), POINTER  :: blocks
+      TYPE(cell_type), INTENT(IN), POINTER               :: cell
+      TYPE(hfx_block_range_type), DIMENSION(:), &
+         INTENT(IN), POINTER                             :: blocks
 
       INTEGER                                            :: iatom, iblock, ikind, jatom, jblock, &
                                                             jkind, nseta, nsetb
       REAL(KIND=dp)                                      :: rab2
-      REAL(KIND=dp), DIMENSION(3)                        :: B11, pbc_B, ra, rb, temp
+      REAL(KIND=dp), DIMENSION(3)                        :: ra, rb
 
       atomic_pair_list = .FALSE.
 
@@ -572,21 +571,17 @@ CONTAINS
                ikind = kind_of(iatom)
                nseta = basis_parameter(ikind)%nset
                ra = particle_set(iatom)%r(:)
-               DO jatom = blocks(jblock)%istart, blocks(jblock)%iend
-                  IF (jatom < iatom) CYCLE
+               DO jatom = MAX(iatom, blocks(jblock)%istart), blocks(jblock)%iend
                   jkind = kind_of(jatom)
                   nsetb = basis_parameter(jkind)%nset
                   rb = particle_set(jatom)%r(:)
 
                   IF (do_periodic) THEN
-                     temp = rb - ra
-                     pbc_B = pbc(temp, cell)
-                     B11 = ra + pbc_B
-                     rab2 = (ra(1) - B11(1))**2 + (ra(2) - B11(2))**2 + (ra(3) - B11(3))**2
-                  ELSE
-                     rab2 = (ra(1) - rb(1))**2 + (ra(2) - rb(2))**2 + (ra(3) - rb(3))**2
-                     B11 = rb ! ra - rb
+                     rb = ra + pbc(rb - ra, cell)
                   END IF
+
+                  rab2 = SUM((ra - rb)**2)
+
                   IF ((coeffs_kind(jkind, ikind)%x(1)*rab2 + &
                        coeffs_kind(jkind, ikind)%x(2)) + coeffs_kind_max0 < log10_eps_schwarz) CYCLE
 

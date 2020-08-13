@@ -920,7 +920,7 @@ CONTAINS
          INTENT(IN), POINTER                             :: coeffs_kind
       INTEGER, DIMENSION(:, :), INTENT(IN)               :: is_assoc_atomic_block_global
       LOGICAL, INTENT(IN)                                :: do_periodic
-      INTEGER, INTENT(IN)                                :: kind_of(*)
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
       TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN), &
          POINTER                                         :: basis_parameter
       TYPE(hfx_p_kind), DIMENSION(:), INTENT(IN), &
@@ -1233,7 +1233,7 @@ CONTAINS
          POINTER                                         :: coeffs_kind
       INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block_global
       LOGICAL                                            :: do_periodic
-      INTEGER                                            :: kind_of(*)
+      INTEGER, DIMENSION(:)                              :: kind_of
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
       REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom
@@ -1975,7 +1975,7 @@ CONTAINS
          DIMENSION(nkind, nkind)                         :: coeffs_kind
       INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block_global
       LOGICAL                                            :: do_periodic
-      INTEGER                                            :: kind_of(*)
+      INTEGER, DIMENSION(:)                              :: kind_of
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
       REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom
@@ -2273,7 +2273,7 @@ CONTAINS
          POINTER                                         :: coeffs_kind
       INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block_global
       LOGICAL                                            :: do_periodic
-      INTEGER                                            :: kind_of(*)
+      INTEGER, DIMENSION(:)                              :: kind_of
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
       REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom
