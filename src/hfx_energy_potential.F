@@ -1133,6 +1133,7 @@ CONTAINS
             tmp_block = tmp_block/nblocks
             iatom_block = INT(MODULO(tmp_block, nblocks)) + 1
             IF (jatom_block < iatom_block) CYCLE
+
             my_current_counter = my_current_counter + 1
             IF (my_current_counter > distribution_energy%number_of_atom_quartets) EXIT atomic_blocks
 
@@ -1586,7 +1587,7 @@ CONTAINS
                               END DO
                            END IF
 
-                        ELSE  !! Get integrals from buffer and update Kohn-Sham matrix
+                        ELSE  !! Get integrals from buffer instead of calculating them:
                            nints = current_counter
                            IF (.NOT. use_disk_storage) THEN
                               CALL hfx_get_single_cache_element( &
@@ -1632,12 +1633,14 @@ CONTAINS
                               buffer_start = buffer_start + buffer_size
                            END DO
                         END IF
+
                         !!!  DEBUG, print out primitive integrals and indices. Only works serial no OMP  !!!
                         IF (.FALSE.) THEN
                            CALL print_integrals( &
                               iatom, jatom, katom, latom, shm_set_offset, shm_atomic_block_offset, &
                               iset, jset, kset, lset, nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), primitive_integrals)
                         ENDIF
+
                         IF (.NOT. is_anti_symmetric) THEN
                            !! Update Kohn-Sham matrix
                            CALL update_fock_matrix( &
@@ -2231,25 +2234,27 @@ CONTAINS
       REAL(dp), DIMENSION(1:npgfb), INTENT(IN)           :: zetb
       REAL(dp), DIMENSION(1:npgfc), INTENT(IN)           :: zetc
       REAL(dp), DIMENSION(1:npgfd), INTENT(IN)           :: zetd
-      REAL(dp), DIMENSION(nsgfa, nsgfb, nsgfc, nsgfd)    :: primitive_integrals
-      TYPE(hfx_potential_type)                           :: potential_parameter
-      TYPE(hfx_cell_type), DIMENSION(:), POINTER         :: neighbor_cells
+      REAL(dp), DIMENSION(nsgfa, nsgfb, nsgfc, nsgfd), &
+         INTENT(INOUT)                                   :: primitive_integrals
+      TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
+      TYPE(hfx_cell_type), DIMENSION(:), INTENT(IN), &
+         POINTER                                         :: neighbor_cells
       REAL(dp), INTENT(IN)                               :: screen1(2), screen2(2), eps_schwarz, &
                                                             max_contraction_val
-      REAL(dp)                                           :: cart_estimate
-      TYPE(cell_type), POINTER                           :: cell
-      INTEGER(int_8)                                     :: neris_tmp
+      REAL(dp), INTENT(OUT)                              :: cart_estimate
+      TYPE(cell_type), INTENT(IN), POINTER               :: cell
+      INTEGER(int_8), INTENT(OUT)                        :: neris_tmp
       REAL(dp), INTENT(IN)                               :: log10_pmax, log10_eps_schwarz
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
-         POINTER                                         :: R1_pgf, R2_pgf, pgf1, pgf2
-      TYPE(hfx_pgf_list), DIMENSION(*)                   :: pgf_list_ij, pgf_list_kl
+         INTENT(IN), POINTER                             :: R1_pgf, R2_pgf, pgf1, pgf2
+      TYPE(hfx_pgf_list), DIMENSION(:), INTENT(INOUT)    :: pgf_list_ij, pgf_list_kl
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
          DIMENSION(:), INTENT(INOUT)                     :: pgf_product_list
       INTEGER, DIMENSION(0:), INTENT(IN)                 :: nsgfl_a, nsgfl_b, nsgfl_c, nsgfl_d
       REAL(dp), INTENT(IN) :: sphi_a_ext(sphi_a_u1, sphi_a_u2, sphi_a_u3), &
          sphi_b_ext(sphi_b_u1, sphi_b_u2, sphi_b_u3), sphi_c_ext(sphi_c_u1, sphi_c_u2, sphi_c_u3), &
          sphi_d_ext(sphi_d_u1, sphi_d_u2, sphi_d_u3)
-      REAL(dp), DIMENSION(*)                             :: ee_work, ee_work2, ee_buffer1, &
+      REAL(dp), DIMENSION(:), INTENT(INOUT)              :: ee_work, ee_work2, ee_buffer1, &
                                                             ee_buffer2, ee_primitives_tmp
       LOGICAL, INTENT(IN)                                :: do_periodic
 
@@ -2906,7 +2911,8 @@ CONTAINS
                DO ma = 1, ma_max
                   iint = iint + 1
                   IF (ABS(prim(iint)) .GT. 0.0000000000001) &
-                     WRITE (99, *) atom_offsets(i, 1) + ma + set_offsets(iset, 1, i, 1) - 1, &
+                     WRITE (99, *) &
+                     atom_offsets(i, 1) + ma + set_offsets(iset, 1, i, 1) - 1, &
                      atom_offsets(j, 1) + ma + set_offsets(jset, 1, j, 1) - 1, &
                      atom_offsets(k, 1) + ma + set_offsets(kset, 1, k, 1) - 1, &
                      atom_offsets(l, 1) + ma + set_offsets(lset, 1, l, 1) - 1, &
