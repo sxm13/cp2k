@@ -198,7 +198,6 @@ CONTAINS
       REAL(dp), ALLOCATABLE, DIMENSION(:) :: ee_buffer1, ee_buffer2, ee_primitives_tmp, ee_work, &
          ee_work2, kac_buf, kad_buf, kbc_buf, kbd_buf, pac_buf, pad_buf, pbc_buf, pbd_buf, &
          primitive_integrals
-      REAL(dp), DIMENSION(:), POINTER                    :: p_work
       REAL(dp), DIMENSION(:, :), POINTER :: full_density_alpha, full_density_beta, full_ks_alpha, &
          full_ks_beta, max_contraction, ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, shm_pmax_atom, &
          shm_pmax_block, sphi_b, zeta, zetb, zetc, zetd
@@ -394,7 +393,7 @@ CONTAINS
 !$OMP         pgf_product_list,ks_fully_occ,subtr_size_mb,use_disk_storage,counter,do_disk_storage,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,eps_schwarz,&
 !$OMP         log10_eps_schwarz,eps_storage,hf_fraction,buffer_overflow,logger,private_lib,last_sgf_global,handle_getp,&
-!$OMP         p_work,fac,handle_load,do_dynamic_load_balancing,my_bin_size,maxval_container,integral_containers,maxval_cache,&
+!$OMP         fac,handle_load,do_dynamic_load_balancing,my_bin_size,maxval_container,integral_containers,maxval_cache,&
 !$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,coeffs_kind_max0,set_list_ij,&
 !$OMP         set_list_kl,iatom_start,iatom_end,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
 !$OMP         my_thread_id,my_bin_id,handle_bin,bintime_start,my_istart,my_current_counter,latom_block,tmp_block,&
@@ -817,7 +816,7 @@ CONTAINS
                                        shm_master_x_data%screen_funct_coeffs_kind, &
                                        shm_master_x_data%screen_funct_coeffs_pgf, &
                                        shm_master_x_data%pair_dist_radii_pgf, &
-                                       max_set, max_pgf, n_threads, i_thread, p_work)
+                                       max_set, max_pgf, n_threads, i_thread)
 
 !$OMP MASTER
          shm_master_x_data%screen_funct_is_initialized = .TRUE.
@@ -1483,7 +1482,7 @@ CONTAINS
                                          sphi_c_ext_set, &
                                          sphi_d_ext_set, &
                                          ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
-                                         do_periodic, p_work)
+                                         do_periodic)
 
                            nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
                            neris_total = neris_total + nints
@@ -2194,7 +2193,6 @@ CONTAINS
 !> \param ee_buffer2 ...
 !> \param ee_primitives_tmp ...
 !> \param do_periodic ...
-!> \param p_work ...
 !> \par History
 !>      11.2006 created [Manuel Guidon]
 !>      02.2009 completely rewritten screening part [Manuel Guidon]
@@ -2219,7 +2217,7 @@ CONTAINS
                        nsgfl_d, &
                        sphi_a_ext, sphi_b_ext, sphi_c_ext, sphi_d_ext, &
                        ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
-                       do_periodic, p_work)
+                       do_periodic)
 
       TYPE(cp_libint_t)                                  :: lib
       REAL(dp), INTENT(IN)                               :: ra(3), rb(3), rc(3), rd(3)
@@ -2252,7 +2250,6 @@ CONTAINS
       REAL(dp), DIMENSION(*)                             :: ee_work, ee_work2, ee_buffer1, &
                                                             ee_buffer2, ee_primitives_tmp
       LOGICAL, INTENT(IN)                                :: do_periodic
-      REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
       INTEGER :: ipgf, jpgf, kpgf, la, lb, lc, ld, list_ij, list_kl, lpgf, max_l, ncoa, ncob, &
          ncoc, ncod, nelements_ij, nelements_kl, nproducts, nsgfla, nsgflb, nsgflc, nsgfld, nsoa, &
@@ -2324,8 +2321,7 @@ CONTAINS
                                           sphi_b_ext(1, lb + 1, jpgf), &
                                           sphi_c_ext(1, lc + 1, kpgf), &
                                           sphi_d_ext(1, ld + 1, lpgf), &
-                                          ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
-                                          p_work)
+                                          ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp)
                         cart_estimate = MAX(tmp_max, cart_estimate)
                         s_offset_d = s_offset_d + nsod*nsgfld
                      END DO !ld
