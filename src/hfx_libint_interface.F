@@ -1455,16 +1455,20 @@ CONTAINS
                            sphi_a, sphi_b, sphi_c, sphi_d, work, work2, buffer1, buffer2, &
                            primitives_tmp)
 
-      TYPE(cp_libint_t)                                  :: libint
+      TYPE(cp_libint_t), INTENT(INOUT)                   :: libint
       INTEGER, INTENT(IN)                                :: nproducts
-      TYPE(hfx_pgf_product_list), DIMENSION(nproducts)   :: pgf_product_list
+      TYPE(hfx_pgf_product_list), DIMENSION(nproducts), &
+         INTENT(IN)                                      :: pgf_product_list
       INTEGER, INTENT(IN)                                :: n_a, n_b, n_c, n_d, ncoa, ncob, ncoc, &
                                                             ncod, nsgfa, nsgfb, nsgfc, nsgfd
-      REAL(dp), DIMENSION(nsgfa, nsgfb, nsgfc, nsgfd)    :: primitives
-      REAL(dp)                                           :: max_contraction, tmp_max, eps_schwarz
+      REAL(dp), DIMENSION(nsgfa, nsgfb, nsgfc, nsgfd), &
+         INTENT(INOUT)                                   :: primitives
+      REAL(dp), INTENT(IN)                               :: max_contraction
+      REAL(dp), INTENT(OUT)                              :: tmp_max
+      REAL(dp), INTENT(IN)                               :: eps_schwarz
       INTEGER(int_8), INTENT(INOUT)                      :: neris
       REAL(dp), INTENT(IN)                               :: ZetaInv, EtaInv
-      INTEGER                                            :: s_offset_a, s_offset_b, s_offset_c, &
+      INTEGER, INTENT(IN)                                :: s_offset_a, s_offset_b, s_offset_c, &
                                                             s_offset_d, nl_a, nl_b, nl_c, nl_d, &
                                                             nsoa, nsob, nsoc, nsod
       REAL(dp), DIMENSION(ncoa, nsoa*nl_a), INTENT(IN)   :: sphi_a
