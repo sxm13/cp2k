@@ -1286,7 +1286,6 @@ CONTAINS
 !> \param potential_parameter ...
 !> \param R1 ...
 !> \param R2 ...
-!> \param p_work ...
 !> \par History
 !>      03.2007 created [Manuel Guidon]
 !>      08.2007 refactured permutation part [Manuel Guidon]
@@ -1294,8 +1293,7 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE evaluate_eri_screen(libint, A, B, C, D, Zeta_A, Zeta_B, Zeta_C, Zeta_D, &
                                   n_a, n_b, n_c, n_d, &
-                                  max_val, potential_parameter, R1, R2, &
-                                  p_work)
+                                  max_val, potential_parameter, R1, R2)
 
       TYPE(cp_libint_t)                                  :: libint
       REAL(dp), INTENT(IN)                               :: A(3), B(3), C(3), D(3), Zeta_A, Zeta_B, &
@@ -1304,9 +1302,9 @@ CONTAINS
       REAL(dp), INTENT(INOUT)                            :: max_val
       TYPE(hfx_potential_type)                           :: potential_parameter
       REAL(dp)                                           :: R1, R2
-      REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
       INTEGER                                            :: i, m_max, mysize, perm_case
+      REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
       m_max = n_a + n_b + n_c + n_d
       mysize = nco(n_a)*nco(n_b)*nco(n_c)*nco(n_d)
@@ -1442,7 +1440,6 @@ CONTAINS
 !> \param buffer1 ...
 !> \param buffer2 ...
 !> \param primitives_tmp ...
-!> \param p_work ...
 !> \par History
 !>      11.2006 created [Manuel Guidon]
 !>      08.2007 refactured permutation part [Manuel Guidon]
@@ -1458,7 +1455,7 @@ CONTAINS
                            s_offset_a, s_offset_b, s_offset_c, s_offset_d, &
                            nl_a, nl_b, nl_c, nl_d, nsoa, nsob, nsoc, nsod, &
                            sphi_a, sphi_b, sphi_c, sphi_d, work, work2, buffer1, buffer2, &
-                           primitives_tmp, p_work)
+                           primitives_tmp)
 
       TYPE(cp_libint_t)                                  :: libint
       INTEGER, INTENT(IN)                                :: nproducts
@@ -1481,13 +1478,13 @@ CONTAINS
       REAL(dp), DIMENSION(ncoa*ncob*ncoc*ncod)           :: buffer1, buffer2
       REAL(dp), DIMENSION(nsoa*nl_a, nsob*nl_b, nsoc*&
          nl_c, nsod*nl_d)                                :: primitives_tmp
-      REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
       INTEGER                                            :: i, j, k, l, m_max, mysize, p1, p2, p3, &
                                                             p4, perm_case
       REAL(dp)                                           :: A(3), AB(3), B(3), C(3), CD(3), D(3), &
                                                             P(3), Q(3), Rho, RhoInv, W(3), &
                                                             ZetapEtaInv
+      REAL(dp), DIMENSION(:), POINTER                    :: p_work
       REAL(KIND=dp), DIMENSION(prim_data_f_size)         :: F
 
       m_max = n_a + n_b + n_c + n_d
