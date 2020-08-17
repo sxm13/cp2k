@@ -180,7 +180,7 @@ MODULE hfx_types
    TYPE hfx_periodic_type
       INTEGER                                  :: number_of_shells !! number of periodic image cells
       LOGICAL                                  :: do_periodic !! periodic ?
-      INTEGER                                  :: perd(3) !! x,xy,xyz,...
+      INTEGER                                  :: perd(3) ! 1 if a direction X, Y, Z should be treated periodic, 0 otherwise
       INTEGER                                  :: mode
       REAL(dp)                                 :: R_max_stress
       INTEGER                                  :: number_of_shells_from_input
@@ -2084,7 +2084,7 @@ CONTAINS
                         P(2, idx) = y + jshell
                         P(3, idx) = z + kshell
                         CALL scaled_to_real(r, P(:, idx), cell)
-                        distance(idx) = SQRT(SUM(r**2))
+                        distance(idx) = NORM2(r)
                         P(1:3, idx) = r
                      END DO
                   END DO
@@ -2098,7 +2098,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 1) + normal(2, 1)*P(2, 1) + normal(3, 1)*P(3, 1))
 
                IF (point_is_in_quadrilateral(P(:, 1), P(:, 3), P(:, 4), P(:, 2), point_in_plane)) THEN
@@ -2114,7 +2114,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 1) + normal(2, 1)*P(2, 1) + normal(3, 1)*P(3, 1))
 
                IF (point_is_in_quadrilateral(P(:, 1), P(:, 5), P(:, 6), P(:, 2), point_in_plane)) THEN
@@ -2130,7 +2130,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 5) + normal(2, 1)*P(2, 5) + normal(3, 1)*P(3, 5))
 
                IF (point_is_in_quadrilateral(P(:, 5), P(:, 7), P(:, 8), P(:, 6), point_in_plane)) THEN
@@ -2146,7 +2146,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 3) + normal(2, 1)*P(2, 3) + normal(3, 1)*P(3, 3))
 
                IF (point_is_in_quadrilateral(P(:, 3), P(:, 7), P(:, 8), P(:, 4), point_in_plane)) THEN
@@ -2162,7 +2162,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 2) + normal(2, 1)*P(2, 2) + normal(3, 1)*P(3, 2))
 
                IF (point_is_in_quadrilateral(P(:, 2), P(:, 6), P(:, 8), P(:, 4), point_in_plane)) THEN
@@ -2178,7 +2178,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 1) + normal(2, 1)*P(2, 1) + normal(3, 1)*P(3, 1))
 
                IF (point_is_in_quadrilateral(P(:, 1), P(:, 5), P(:, 7), P(:, 3), point_in_plane)) THEN
@@ -2207,6 +2207,7 @@ CONTAINS
                nothing_more_to_add = .TRUE.
             END IF
          END DO
+
          ! now remove what is not needed
          ALLOCATE (tmp_neighbor_cells(total_number_of_cells))
          DO i = 1, ub - 1
@@ -2216,11 +2217,9 @@ CONTAINS
          ! If we only need the supercell, total_number_of_cells is still 0, repair
          IF (total_number_of_cells == 0) THEN
             total_number_of_cells = 1
-            ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
-            DO i = 1, total_number_of_cells
-               x_data%neighbor_cells(i)%cell = 0.0_dp
-               x_data%neighbor_cells(i)%cell_r = 0.0_dp
-            END DO
+            ALLOCATE (x_data%neighbor_cells(1))
+            x_data%neighbor_cells(1)%cell = 0.0_dp
+            x_data%neighbor_cells(1)%cell_r = 0.0_dp
          ELSE
             ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
             DO i = 1, total_number_of_cells
@@ -2272,6 +2271,7 @@ CONTAINS
 
          ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
 
+         ! enumerate the cells
          m = 0
          i = 1
          DO WHILE (SUM(m**2) <= pbc_shells)
@@ -2283,7 +2283,6 @@ CONTAINS
 
       ! ** Transform into real coord
       DO i = 1, SIZE(x_data%neighbor_cells)
-         r = 0.0_dp
          x_data%neighbor_cells(i)%cell_r(:) = 0.0_dp
          s = x_data%neighbor_cells(i)%cell(:)
          CALL scaled_to_real(x_data%neighbor_cells(i)%cell_r, s, cell)
@@ -2309,8 +2308,8 @@ CONTAINS
 !> \param P ...
 !> \return ...
 ! **************************************************************************************************
-   FUNCTION point_is_in_quadrilateral(A, B, C, D, P)
-      REAL(dp)                                           :: A(3), B(3), C(3), D(3), P(3)
+   PURE FUNCTION point_is_in_quadrilateral(A, B, C, D, P)
+      REAL(dp), INTENT(IN)                               :: A(3), B(3), C(3), D(3), P(3)
       LOGICAL                                            :: point_is_in_quadrilateral
 
       REAL(dp), PARAMETER :: fuzzy = 1000.0_dp*EPSILON(1.0_dp)
