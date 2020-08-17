@@ -17,10 +17,10 @@ MODULE input_cp2k_hfx
                                               high_print_level,&
                                               medium_print_level
    USE input_constants,                 ONLY: &
-        do_potential_coulomb, do_potential_gaussian, do_potential_id, do_potential_long, &
-        do_potential_mix_cl, do_potential_mix_cl_trunc, do_potential_mix_lg, do_potential_short, &
-        do_potential_truncated, ehrenfest, gaussian, hfx_ri_do_2c_cholesky, hfx_ri_do_2c_diag, &
-        hfx_ri_do_2c_iter
+        do_hfx_auto_shells, do_potential_coulomb, do_potential_gaussian, do_potential_id, &
+        do_potential_long, do_potential_mix_cl, do_potential_mix_cl_trunc, do_potential_mix_lg, &
+        do_potential_short, do_potential_truncated, ehrenfest, gaussian, hfx_ri_do_2c_cholesky, &
+        hfx_ri_do_2c_diag, hfx_ri_do_2c_iter
    USE input_cp2k_loc,                  ONLY: create_localize_section
    USE input_keyword_types,             ONLY: keyword_create,&
                                               keyword_release,&
@@ -401,12 +401,13 @@ CONTAINS
       CALL keyword_create( &
          keyword, __LOCATION__, &
          name="NUMBER_OF_SHELLS", &
-         description="Number of shells taken into account for periodicity. "// &
-         "By default, cp2k tries to automatically evaluate this number. "// &
-         "This algorithm might be to conservative, resulting in some overhead. "// &
-         "You can try to adjust this number in order to make a calculation cheaper. ", &
+         description="Number of shells taken into account for periodicity."// &
+         " By default, CP2K tries to automatically calculate this number when using"// &
+         " TRUNCATED, MIX_CL_TRUNC and IDENTITY interaction potentials, for others"// &
+         " it should be set explicitly."// &
+         " This algorithm might be too conservative, resulting in some overhead.", &
          usage="NUMBER_OF_SHELLS 2", &
-         default_i_val=-1)
+         default_i_val=do_hfx_auto_shells)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
