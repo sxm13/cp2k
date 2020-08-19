@@ -1972,7 +1972,7 @@ CONTAINS
       REAL(dp) :: cross_product(3), dist_min, distance(14), l_min, normal(3, 6), P(3, 14), &
          plane_vector(3, 2), point_in_plane(3), r(3), R1, R_max, R_max_stress, s(3), x, y, z, Zeta1
       REAL(dp), DIMENSION(:, :), POINTER                 :: zeta, zetb
-      TYPE(hfx_cell_type), ALLOCATABLE, DIMENSION(:)     :: tmp_neighbor_cells
+      TYPE(hfx_cell_type), DIMENSION(:), POINTER         :: tmp_neighbor_cells
 
       total_number_of_cells = 0
 
@@ -2033,7 +2033,6 @@ CONTAINS
          R_max = 2.0_dp*R_max + x_data%potential_parameter%cutoff_radius
          nothing_more_to_add = .FALSE.
          max_shell = 0
-         total_number_of_cells = 0
          ub = 1
          DEALLOCATE (x_data%neighbor_cells)
          ALLOCATE (x_data%neighbor_cells(1))
@@ -2078,12 +2077,10 @@ CONTAINS
          DO WHILE (.NOT. nothing_more_to_add)
             ! Calculate distances to the eight points P1 to P8
             image_cell_found = .FALSE.
-            ALLOCATE (tmp_neighbor_cells(1:ub))
-            DO i = 1, ub - 1
-               tmp_neighbor_cells(i) = x_data%neighbor_cells(i)
-            END DO
+
+            tmp_neighbor_cells => x_data%neighbor_cells
             ub_max = (2*max_shell + 1)**3
-            DEALLOCATE (x_data%neighbor_cells)
+
             ALLOCATE (x_data%neighbor_cells(1:ub_max))
             DO i = 1, ub - 1
                x_data%neighbor_cells(i) = tmp_neighbor_cells(i)
@@ -2092,7 +2089,6 @@ CONTAINS
                x_data%neighbor_cells(i)%cell = 0.0_dp
                x_data%neighbor_cells(i)%cell_r = 0.0_dp
             END DO
-
             DEALLOCATE (tmp_neighbor_cells)
 
             DO ishell = -max_shell, max_shell
@@ -2219,7 +2215,6 @@ CONTAINS
                   image_cell_found = .TRUE.
                END IF
                IF (dist_min < R_max) THEN
-                  total_number_of_cells = total_number_of_cells + 1
                   x_data%neighbor_cells(ub)%cell = REAL((/ishell, jshell, kshell/), dp)
                   ub = ub + 1
                   image_cell_found = .TRUE.
@@ -2236,11 +2231,9 @@ CONTAINS
          END DO
 
          ! now remove what is not needed
-         ALLOCATE (tmp_neighbor_cells(total_number_of_cells))
-         DO i = 1, ub - 1
-            tmp_neighbor_cells(i) = x_data%neighbor_cells(i)
-         END DO
-         DEALLOCATE (x_data%neighbor_cells)
+         tmp_neighbor_cells => x_data%neighbor_cells
+         total_number_of_cells = ub - 1
+
          ! If we only need the supercell, total_number_of_cells is still 0, repair
          IF (total_number_of_cells == 0) THEN
             total_number_of_cells = 1
@@ -2255,9 +2248,7 @@ CONTAINS
          END IF
          DEALLOCATE (tmp_neighbor_cells)
 
-         IF (x_data%periodic_parameter%number_of_shells == do_hfx_auto_shells) THEN
-            ! Do nothing
-         ELSE
+         IF (x_data%periodic_parameter%number_of_shells /= do_hfx_auto_shells) THEN
             total_number_of_cells = 0
             DO i = 0, x_data%periodic_parameter%number_of_shells
                total_number_of_cells = total_number_of_cells + count_cells_perd(i, x_data%periodic_parameter%perd)
@@ -2273,12 +2264,7 @@ CONTAINS
                   CPWARN(error_msg)
                END IF
             END IF
-            total_number_of_cells = 0
-            DO i = 0, x_data%periodic_parameter%number_of_shells
-               total_number_of_cells = total_number_of_cells + count_cells_perd(i, x_data%periodic_parameter%perd)
-            END DO
             DEALLOCATE (x_data%neighbor_cells)
-
             ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
             m = 0
             i = 1
