@@ -568,8 +568,7 @@ CONTAINS
       CHARACTER(LEN=*), PARAMETER :: routineN = 'kpoint_init_cell_index', &
          routineP = moduleN//':'//routineN
 
-      INTEGER                                            :: handle, i1, i2, i3, ic, icount, it, &
-                                                            ncount
+      INTEGER                                            :: handle, i1, i2, i3, ic, icount, ncount
       INTEGER, DIMENSION(3)                              :: cell, itm
       INTEGER, DIMENSION(:, :), POINTER                  :: index_to_cell, list
       INTEGER, DIMENSION(:, :, :), POINTER               :: cti
@@ -612,7 +611,6 @@ CONTAINS
       itm(2) = MAXVAL(ABS(list(2, 1:icount)))
       itm(3) = MAXVAL(ABS(list(3, 1:icount)))
       CALL mp_max(itm, para_env%group)
-      it = MAXVAL(itm(1:3))
       IF (ASSOCIATED(kpoint%cell_to_index)) THEN
          DEALLOCATE (kpoint%cell_to_index)
       END IF
@@ -631,7 +629,7 @@ CONTAINS
          DO i2 = -itm(2), itm(2)
             DO i3 = -itm(3), itm(3)
                IF (cti(i1, i2, i3) == 0) THEN
-                  cti(i1, i2, i3) = 1000000
+                  cti(i1, i2, i3) = HUGE(0)
                ELSE
                   ncount = ncount + 1
                   cti(i1, i2, i3) = (ABS(i1) + ABS(i2) + ABS(i3))*1000 + ABS(i3)*100 + ABS(i2)*10 + ABS(i1)
@@ -647,14 +645,9 @@ CONTAINS
       ALLOCATE (kpoint%index_to_cell(3, ncount))
       index_to_cell => kpoint%index_to_cell
       DO ic = 1, ncount
-         cell = MINLOC(cti)
-         i1 = cell(1) - 1 - itm(1)
-         i2 = cell(2) - 1 - itm(2)
-         i3 = cell(3) - 1 - itm(3)
-         cti(i1, i2, i3) = 1000000
-         index_to_cell(1, ic) = i1
-         index_to_cell(2, ic) = i2
-         index_to_cell(3, ic) = i3
+         cell = MINLOC(cti) + LBOUND(cti) - 1 ! minloc ignores explicit array boundaries
+         cti(cell(1), cell(2), cell(3)) = HUGE(0)
+         index_to_cell(:, ic) = cell(:)
       END DO
       cti(:, :, :) = 0
       DO ic = 1, ncount
