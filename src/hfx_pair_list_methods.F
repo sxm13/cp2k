@@ -405,7 +405,6 @@ CONTAINS
                   pair%S1234 = (-Zeta_A*Zeta_B*ZetaInv*rab2)
                   pair%P = (Zeta_A*ra + Zeta_B*im_B)*ZetaInv
                   pair%R = MAX(0.0_dp, R_pgf(jpgf, ipgf)%x(1)*rab2 + R_pgf(jpgf, ipgf)%x(2))
-                  pair%bcell = neighbor_cells(i)%cell
                END ASSOCIATE
             END DO
          END DO
