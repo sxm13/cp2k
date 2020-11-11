@@ -70,8 +70,7 @@ CONTAINS
          DIMENSION(:), INTENT(INOUT)                     :: product_list
       INTEGER, INTENT(OUT)                               :: nproducts
       REAL(dp), INTENT(IN)                               :: log10_pmax, log10_eps_schwarz
-      TYPE(hfx_cell_type), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: neighbor_cells
+      TYPE(hfx_cell_type), DIMENSION(:), INTENT(IN)      :: neighbor_cells
       TYPE(cell_type), INTENT(IN), POINTER               :: cell
       TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
       INTEGER, INTENT(IN)                                :: m_max
@@ -347,8 +346,7 @@ CONTAINS
       REAL(dp), INTENT(IN)                               :: log10_pmax, log10_eps_schwarz, ra(3), &
                                                             rb(3)
       INTEGER, INTENT(OUT)                               :: nelements
-      TYPE(hfx_cell_type), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: neighbor_cells
+      TYPE(hfx_cell_type), DIMENSION(:), INTENT(IN)      :: neighbor_cells
       LOGICAL, INTENT(IN)                                :: do_periodic
 
       INTEGER                                            :: element_counter, i, ipgf, j, jpgf
@@ -375,9 +373,7 @@ CONTAINS
             DO jpgf = 1, npgfb
                element_counter = element_counter + 1
                pgf_max = pgf(jpgf, ipgf)%x(1)*rab2 + pgf(jpgf, ipgf)%x(2)
-               IF (pgf_max + screen2(2) + log10_pmax < log10_eps_schwarz) THEN
-                  CYCLE
-               END IF
+               IF (pgf_max + screen2(2) + log10_pmax < log10_eps_schwarz) CYCLE
                list(element_counter)%nimages = list(element_counter)%nimages + 1
 
                Zeta_A = zeta(ipgf)

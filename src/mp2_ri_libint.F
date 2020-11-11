@@ -635,7 +635,10 @@ CONTAINS
                                 zetc(1:npgfc(kset), kset), zetd(1:npgfd(lset), lset), &
                                 primitive_integrals, &
                                 mp2_potential_parameter, &
-                                actual_x_data%neighbor_cells, screen_coeffs_set(1, 1, 1, 1)%x, &
+                                actual_x_data%neighbor_cells, &
+                                actual_x_data%neighbor_cells, &
+                                actual_x_data%neighbor_cells, &
+                                screen_coeffs_set(1, 1, 1, 1)%x, &
                                 screen_coeffs_set(1, 1, 1, 1)%x, eps_schwarz, &
                                 max_contraction_val, cartesian_estimate, cell, neris_tmp, &
                                 log10_pmax, log10_eps_schwarz, &
@@ -863,7 +866,10 @@ CONTAINS
                                 zetc(1:npgfc(kset), kset), zetd(1:npgfd(lset), lset), &
                                 primitive_integrals, &
                                 mp2_potential_parameter, &
-                                actual_x_data%neighbor_cells, screen_coeffs_set(kset, kset, kkind, kkind)%x, &
+                                actual_x_data%neighbor_cells, &
+                                actual_x_data%neighbor_cells, &
+                                actual_x_data%neighbor_cells, &
+                                screen_coeffs_set(kset, kset, kkind, kkind)%x, &
                                 screen_coeffs_set(kset, kset, kkind, kkind)%x, eps_schwarz, &
                                 max_contraction_val, cartesian_estimate, cell, neris_tmp, &
                                 log10_pmax, log10_eps_schwarz, &
