@@ -169,13 +169,13 @@ CONTAINS
       INTEGER(int_8) :: atom_block, counter, estimate_to_store_int, max_val_memory, &
          mb_size_buffers, mb_size_f, mb_size_p, mem_compression_counter, &
          mem_compression_counter_disk, mem_eris, mem_eris_disk, mem_max_val, memsize_after, &
-         memsize_before, my_current_counter, my_istart, n_processes, nblocks, ncpu, neris_disk, &
-         neris_incore, neris_onthefly, neris_tmp, neris_total, nprim_ints, &
+         memsize_before, my_current_counter, my_istart, n_processes, nblocks, ncpu, neris_coulomb, &
+         neris_disk, neris_incore, neris_onthefly, neris_total, nprim_ints, &
          shm_mem_compression_counter, shm_neris_disk, shm_neris_incore, shm_neris_onthefly, &
          shm_neris_total, shm_nprim_ints, shm_stor_count_int_disk, shm_stor_count_max_val, &
-         shm_storage_counter_integrals, stor_count_int_disk
-      INTEGER(int_8) :: stor_count_max_val, storage_counter_integrals, subtr_size_mb, tmp_block, &
-         tmp_i8(8)
+         shm_storage_counter_integrals
+      INTEGER(int_8) :: stor_count_int_disk, stor_count_max_val, storage_counter_integrals, &
+         subtr_size_mb, tmp_block, tmp_i8(8)
       INTEGER(int_8), ALLOCATABLE, DIMENSION(:)          :: tmp_task_list_cost
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, last_sgf_global, tmp_index
       INTEGER, DIMENSION(:), POINTER :: la_max, la_min, lb_max, lb_min, lc_max, lc_min, ld_max, &
@@ -385,7 +385,7 @@ CONTAINS
 !$OMP         general_parameter,load_balance_parameter,memory_parameter,cache_size,bits_max_val,&
 !$OMP         basis_parameter,basis_info,treat_lsd_in_core,ncpu,n_processes,neris_total,neris_incore,&
 !$OMP         neris_disk,neris_onthefly,mem_eris,mem_eris_disk,mem_max_val,compression_factor,&
-!$OMP         compression_factor_disk,nprim_ints,neris_tmp,max_val_memory,max_am,do_p_screening,&
+!$OMP         compression_factor_disk,nprim_ints,neris_coulomb,max_val_memory,max_am,do_p_screening,&
 !$OMP         max_set,particle_set,atomic_kind_set,natom,kind_of,ncos_max,nsgf_max,ikind,&
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
 !$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,max_contraction,&
@@ -459,7 +459,7 @@ CONTAINS
       compression_factor = 0.0_dp
       compression_factor_disk = 0.0_dp
       nprim_ints = 0_int_8
-      neris_tmp = 0_int_8
+      neris_coulomb = 0_int_8
       max_val_memory = 1_int_8
 
       max_am = basis_info%max_am
@@ -1449,6 +1449,8 @@ CONTAINS
 
                         !! Calculate integrals if we run out of buffer or the geometry did change
                         IF (my_geo_change .OR. buffer_overflow) THEN
+                           nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
+
                            max_contraction_val = max_contraction(iset, iatom)* &
                                                  max_contraction(jset, jatom)* &
                                                  max_contraction(kset, katom)* &
@@ -1472,7 +1474,7 @@ CONTAINS
                                          potential_parameter, &
                                          actual_x_data%neighbor_cells, screen_coeffs_set(jset, iset, jkind, ikind)%x, &
                                          screen_coeffs_set(lset, kset, lkind, kkind)%x, eps_schwarz, &
-                                         max_contraction_val, cartesian_estimate, cell, neris_tmp, &
+                                         max_contraction_val, cartesian_estimate, cell, neris_coulomb, &
                                          log10_pmax, log10_eps_schwarz, &
                                          tmp_R_1, tmp_R_2, tmp_screen_pgf1, tmp_screen_pgf2, &
                                          pgf_list_ij, pgf_list_kl, pgf_product_list, &
@@ -1487,7 +1489,7 @@ CONTAINS
 
                            nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
                            neris_total = neris_total + nints
-                           nprim_ints = nprim_ints + neris_tmp
+                           nprim_ints = nprim_ints + neris_coulomb
 
                            !! Compress the array for storage
                            spherical_estimate = TINY(spherical_estimate)
@@ -2172,16 +2174,16 @@ CONTAINS
 !> \param max_contraction_val maximum multiplication factor for cart -> sph
 !> \param cart_estimate maximum calculated integral value
 !> \param cell cell
-!> \param neris_tmp counter for calculated cart integrals
+!> \param neris counter for calculated cart integrals
 !> \param log10_pmax logarithm of initial p matrix max element
 !> \param log10_eps_schwarz log of threshold
 !> \param R1_pgf coefficients for radii of product distribution function
 !> \param R2_pgf coefficients for radii of product distribution function
 !> \param pgf1 schwarz coefficients pgf basid
 !> \param pgf2 schwarz coefficients pgf basid
-!> \param pgf_list_ij ...
-!> \param pgf_list_kl ...
-!> \param pgf_product_list ...
+!> \param pgf_list_ij list of primitive gaussians for (ij|..), only intent(inout) to avoid re-alloc
+!> \param pgf_list_kl list of primitive gaussians for (..|kl), only intent(inout) to avoid re-alloc
+!> \param pgf_product_list final product list of primitive gaussians, only intent(inout) to avoid re-alloc
 !> \param nsgfl_a ...
 !> \param nsgfl_b ...
 !> \param nsgfl_c ...
@@ -2212,7 +2214,7 @@ CONTAINS
                        primitive_integrals, &
                        potential_parameter, neighbor_cells, &
                        screen1, screen2, eps_schwarz, max_contraction_val, &
-                       cart_estimate, cell, neris_tmp, log10_pmax, &
+                       cart_estimate, cell, neris, log10_pmax, &
                        log10_eps_schwarz, R1_pgf, R2_pgf, pgf1, pgf2, &
                        pgf_list_ij, pgf_list_kl, &
                        pgf_product_list, &
@@ -2241,7 +2243,7 @@ CONTAINS
                                                             max_contraction_val
       REAL(dp), INTENT(OUT)                              :: cart_estimate
       TYPE(cell_type), INTENT(IN), POINTER               :: cell
-      INTEGER(int_8), INTENT(OUT)                        :: neris_tmp
+      INTEGER(int_8), INTENT(OUT)                        :: neris
       REAL(dp), INTENT(IN)                               :: log10_pmax, log10_eps_schwarz
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
          INTENT(IN), POINTER                             :: R1_pgf, R2_pgf, pgf1, pgf2
@@ -2271,7 +2273,7 @@ CONTAINS
                                neighbor_cells, do_periodic)
 
       cart_estimate = 0.0_dp
-      neris_tmp = 0
+      neris = 0
       primitive_integrals = 0.0_dp
       max_l = la_max + lb_max + lc_max + ld_max
       DO list_ij = 1, nelements_ij
@@ -2319,7 +2321,7 @@ CONTAINS
                                           nsgfa, nsgfb, nsgfc, nsgfd, &
                                           primitive_integrals, &
                                           max_contraction_val, tmp_max, eps_schwarz, &
-                                          neris_tmp, ZetaInv, EtaInv, &
+                                          neris, ZetaInv, EtaInv, &
                                           s_offset_a, s_offset_b, s_offset_c, s_offset_d, &
                                           nsgfla, nsgflb, nsgflc, nsgfld, nsoa, nsob, nsoc, nsod, &
                                           sphi_a_ext(1, la + 1, ipgf), &
@@ -2328,7 +2330,7 @@ CONTAINS
                                           sphi_d_ext(1, ld + 1, lpgf), &
                                           ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp)
                         cart_estimate = MAX(tmp_max, cart_estimate)
-                        s_offset_d = s_offset_d + nsod*nsgfld
+                        s_offset_d = s_offset_d + nsod*nsgfld  ! advance by number of of values calculated
                      END DO !ld
                      s_offset_c = s_offset_c + nsoc*nsgflc
                   END DO !lc

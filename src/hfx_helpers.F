@@ -74,7 +74,7 @@ CONTAINS
                   m = [i, j, k]
                   EXIT outer
                ENDIF
-               IF (ALL(M .EQ. [i, j, k])) found = .TRUE.
+               IF (ALL(m .EQ. [i, j, k])) found = .TRUE.
             ENDDO inner
          ENDDO
          ENDDO
