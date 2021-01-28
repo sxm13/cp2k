@@ -1,8 +1,6 @@
 !--------------------------------------------------------------------------------------------------!
 !   CP2K: A general program to perform molecular dynamics simulations                              !
-!   Copyright 2000-2021 CP2K developers group <https://cp2k.org>                                   !
-!                                                                                                  !
-!   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
+!   Copyright (C) 2000 - 2021  CP2K developers group                                               !
 !--------------------------------------------------------------------------------------------------!
 
 ! **************************************************************************************************
@@ -179,7 +177,7 @@ CONTAINS
       INTEGER(int_8) :: stor_count_max_val, storage_counter_integrals, subtr_size_mb, tmp_block, &
          tmp_i8(8)
       INTEGER(int_8), ALLOCATABLE, DIMENSION(:)          :: tmp_task_list_cost
-      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, last_sgf_global, tmp_index
+      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, tmp_index
       INTEGER, DIMENSION(:), POINTER :: la_max, la_min, lb_max, lb_min, lc_max, lc_min, ld_max, &
          ld_min, npgfa, npgfb, npgfc, npgfd, nsgfa, nsgfb, nsgfc, nsgfd, shm_block_offset
       INTEGER, DIMENSION(:, :), POINTER :: first_sgfb, nsgfl_a, nsgfl_b, nsgfl_c, nsgfl_d, &
@@ -394,7 +392,7 @@ CONTAINS
 !$OMP         max_pgf,jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
 !$OMP         pgf_product_list,ks_fully_occ,subtr_size_mb,use_disk_storage,counter,do_disk_storage,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,eps_schwarz,&
-!$OMP         log10_eps_schwarz,eps_storage,hf_fraction,buffer_overflow,logger,private_lib,last_sgf_global,handle_getp,&
+!$OMP         log10_eps_schwarz,eps_storage,hf_fraction,buffer_overflow,logger,private_lib,handle_getp,&
 !$OMP         fac,handle_load,do_dynamic_load_balancing,my_bin_size,maxval_container,integral_containers,maxval_cache,&
 !$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,coeffs_kind_max0,set_list_ij,&
 !$OMP         set_list_kl,iatom_start,iatom_end,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
@@ -701,13 +699,6 @@ CONTAINS
 
       private_lib = actual_x_data%lib
 
-      !! Helper array to map local basis function indices to global ones
-      ALLOCATE (last_sgf_global(0:natom))
-      last_sgf_global(0) = 0
-      DO iatom = 1, natom
-         ikind = kind_of(iatom)
-         last_sgf_global(iatom) = last_sgf_global(iatom - 1) + basis_parameter(ikind)%nsgf_total
-      END DO
 !$OMP BARRIER
 !$OMP MASTER
       !! Let master thread get the density (avoid problems with MPI)
@@ -2089,18 +2080,14 @@ CONTAINS
       END IF
 !$OMP END CRITICAL(hfxenergy_out_critical)
 !$OMP BARRIER
-      !! Clean up
-      DEALLOCATE (last_sgf_global)
 !$OMP MASTER
       DEALLOCATE (full_density_alpha)
-      IF (.NOT. treat_lsd_in_core) THEN
-         IF (is_unrestricted) THEN
-            DEALLOCATE (full_density_beta)
-         END IF
-      END IF
-      IF (do_dynamic_load_balancing) THEN
+
+      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) &
+         DEALLOCATE (full_density_beta)
+
+      IF (do_dynamic_load_balancing) &
          DEALLOCATE (shm_master_x_data%task_list)
-      END IF
 !$OMP END MASTER
       DEALLOCATE (pbd_buf, pbc_buf, pad_buf, pac_buf)
       DEALLOCATE (kbd_buf, kbc_buf, kad_buf, kac_buf)
