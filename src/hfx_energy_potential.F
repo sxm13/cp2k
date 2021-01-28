@@ -63,8 +63,8 @@ MODULE hfx_energy_potential
         hfx_cell_type, hfx_container_type, hfx_create_neighbor_cells, hfx_distribution, &
         hfx_general_type, hfx_init_container, hfx_load_balance_type, hfx_memory_type, hfx_p_kind, &
         hfx_pgf_list, hfx_pgf_product_list, hfx_potential_type, hfx_reset_memory_usage_counter, &
-        hfx_screen_coeff_type, hfx_screening_type, hfx_task_list_type, hfx_type, init_t_c_g0_lmax, &
-        log_zero, pair_list_type, pair_set_list_type
+        hfx_screen_coeff_type, hfx_task_list_type, hfx_type, init_t_c_g0_lmax, log_zero, &
+        pair_list_type, pair_set_list_type
    USE input_constants,                 ONLY: do_potential_mix_cl_trunc,&
                                               do_potential_truncated,&
                                               hfx_do_eval_energy
@@ -188,14 +188,15 @@ CONTAINS
       INTEGER, DIMENSION(:, :, :, :), POINTER            :: shm_set_offset
       INTEGER, SAVE                                      :: shm_number_of_p_entries
       LOGICAL :: bins_left, buffer_overflow, do_disk_storage, do_dynamic_load_balancing, do_it, &
-         do_kpoints, do_p_screening, do_periodic, do_print_load_balance_info, is_anti_symmetric, &
-         is_unrestricted, my_geo_change, treat_lsd_in_core, use_disk_storage
+         do_kpoints, do_p_screening, do_p_screening_forces, do_periodic, &
+         do_print_load_balance_info, is_anti_symmetric, is_unrestricted, my_geo_change, &
+         treat_lsd_in_core, use_disk_storage
       LOGICAL, DIMENSION(:, :), POINTER                  :: shm_atomic_pair_list
       REAL(dp) :: afac, bintime_start, bintime_stop, cartesian_estimate, compression_factor, &
          compression_factor_disk, ene_x_aa, ene_x_aa_diag, ene_x_bb, ene_x_bb_diag, eps_schwarz, &
-         eps_storage, etmp, fac, hf_fraction, log10_eps_schwarz, log10_pmax, max_contraction_val, &
-         max_val1, max_val2, max_val2_set, pmax_atom, pmax_blocks, pmax_entry, ra(3), rab2, rb(3), &
-         rc(3), rcd2, rd(3), screen_kind_ij, screen_kind_kl, spherical_estimate, symm_fac
+         eps_storage, etmp, fac, log10_eps_schwarz, log10_pmax, max_contraction_val, max_val1, &
+         max_val2, max_val2_set, pmax_atom, pmax_blocks, pmax_entry, ra(3), rab2, rb(3), rc(3), &
+         rcd2, rd(3), screen_kind_ij, screen_kind_kl, spherical_estimate, symm_fac
       REAL(dp), ALLOCATABLE, DIMENSION(:) :: ee_buffer1, ee_buffer2, ee_primitives_tmp, ee_work, &
          ee_work2, kac_buf, kad_buf, kbc_buf, kbd_buf, pac_buf, pad_buf, pbc_buf, pbd_buf, &
          primitive_integrals
@@ -236,7 +237,6 @@ CONTAINS
          DIMENSION(:, :, :, :), POINTER                  :: screen_coeffs_set
       TYPE(hfx_screen_coeff_type), &
          DIMENSION(:, :, :, :, :, :), POINTER            :: radii_pgf, screen_coeffs_pgf
-      TYPE(hfx_screening_type)                           :: screening_parameter
       TYPE(hfx_task_list_type), DIMENSION(:), POINTER    :: shm_task_list, tmp_task_list
       TYPE(hfx_type), POINTER                            :: actual_x_data, shm_master_x_data
       TYPE(kpoint_type), POINTER                         :: kpoints
@@ -282,7 +282,8 @@ CONTAINS
                       cell=cell, &
                       matrix_ks_aux_fit_hfx=matrix_ks_aux_fit_hfx, &
                       do_kpoints=do_kpoints, &
-                      dft_control=dft_control)
+                      dft_control=dft_control, &
+                      particle_set=particle_set)
 
       NULLIFY (cell_to_index)
       IF (do_kpoints) THEN
@@ -328,6 +329,44 @@ CONTAINS
 
       is_unrestricted = dft_control%nspins == 2
 
+      natom = SIZE(particle_set, 1)
+      ALLOCATE (kind_of(natom))
+      CALL get_atomic_kind_set(atomic_kind_set=atomic_kind_set, kind_of=kind_of)
+
+      ! Number of image matrices in k-point calculations (nkimages==1 -> no kpoints)
+      nkimages = dft_control%nimages
+
+      ncpu = para_env%num_pe
+      n_processes = ncpu*n_threads
+
+      shm_master_x_data => x_data(irep, 1)
+
+      ! many parameters are the same, just replicated across the thread data,
+      ! initialize them here from the "master" thread
+
+      do_periodic = shm_master_x_data%periodic_parameter%do_periodic
+      do_p_screening = shm_master_x_data%screening_parameter%do_initial_p_screening
+      do_p_screening_forces = shm_master_x_data%screening_parameter%do_p_screening_forces
+
+      ! Special treatment for MP2 with initial density screening
+      IF (do_p_screening .AND. ASSOCIATED(qs_env%mp2_env)) THEN
+         IF ((qs_env%mp2_env%ri_mp2%free_hfx_buffer)) THEN
+            do_p_screening = ((qs_env%mp2_env%p_screen) .AND. (qs_env%mp2_env%not_last_hfx))
+         ELSE
+            do_p_screening = .FALSE.
+         ENDIF
+      ENDIF
+
+      !! Get screening parameter
+      eps_schwarz = shm_master_x_data%screening_parameter%eps_schwarz
+      log10_eps_schwarz = MERGE(log_zero, LOG10(eps_schwarz), eps_schwarz <= 0.0_dp)
+
+      treat_lsd_in_core = shm_master_x_data%general_parameter%treat_lsd_in_core
+
+      !! If we have a hybrid functional, we may need only a fraction of exact exchange
+      !! Initialize a prefactor depending on the fraction and the number of spins
+      fac = shm_master_x_data%general_parameter%fraction*MERGE(1.0_dp, 0.5_dp, is_unrestricted)
+
 !$OMP PARALLEL DEFAULT(NONE) SHARED(qs_env,&
 !$OMP                                  x_data,&
 !$OMP                                  ks_matrix,&
@@ -365,10 +404,23 @@ CONTAINS
 !$OMP                                  screen_coeffs_set,&
 !$OMP                                  screen_coeffs_kind,&
 !$OMP                                  screen_coeffs_pgf,&
+!$OMP                                  particle_set,&
+!$OMP                                  kind_of,&
+!$OMP                                  natom,&
+!$OMP                                  nkimages,&
+!$OMP                                  ncpu,&
+!$OMP                                  n_processes,&
 !$OMP                                  pgf_product_list_size,&
 !$OMP                                  radii_pgf,&
 !$OMP                                  nkind,&
+!$OMP                                  do_p_screening,&
+!$OMP                                  do_p_screening_forces,&
+!$OMP                                  do_periodic,&
+!$OMP                                  eps_schwarz,&
+!$OMP                                  log10_eps_schwarz,&
 !$OMP                                  ispin,&
+!$OMP                                  treat_lsd_in_core,&
+!$OMP                                  fac,&
 !$OMP                                  is_anti_symmetric,&
 !$OMP                                  shm_atomic_block_offset,&
 !$OMP                                  shm_set_offset,&
@@ -382,19 +434,19 @@ CONTAINS
 !$OMP                                  shm_atomic_pair_list,&
 !$OMP                                  shm_mem_compression_counter,&
 !$OMP                                  do_print_load_balance_info) &
-!$OMP PRIVATE(i_thread,actual_x_data,do_periodic,screening_parameter,potential_parameter,&
+!$OMP PRIVATE(i_thread,actual_x_data,potential_parameter,&
 !$OMP         general_parameter,load_balance_parameter,memory_parameter,cache_size,bits_max_val,&
-!$OMP         basis_parameter,basis_info,treat_lsd_in_core,ncpu,n_processes,neris_total,neris_incore,&
+!$OMP         basis_parameter,basis_info,neris_total,neris_incore,&
 !$OMP         neris_disk,neris_onthefly,mem_eris,mem_eris_disk,mem_max_val,compression_factor,&
-!$OMP         compression_factor_disk,nprim_ints,neris_tmp,max_val_memory,max_am,do_p_screening,&
-!$OMP         max_set,particle_set,atomic_kind_set,natom,kind_of,ncos_max,nsgf_max,ikind,&
+!$OMP         compression_factor_disk,nprim_ints,neris_tmp,max_val_memory,max_am,&
+!$OMP         max_set,ncos_max,nsgf_max,ikind,&
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
 !$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,max_contraction,&
 !$OMP         max_pgf,jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
 !$OMP         pgf_product_list,subtr_size_mb,use_disk_storage,counter,do_disk_storage,&
-!$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,eps_schwarz,&
-!$OMP         log10_eps_schwarz,eps_storage,hf_fraction,buffer_overflow,logger,private_lib,handle_getp,&
-!$OMP         fac,handle_load,do_dynamic_load_balancing,my_bin_size,maxval_container,integral_containers,maxval_cache,&
+!$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,&
+!$OMP         eps_storage,buffer_overflow,logger,private_lib,handle_getp,&
+!$OMP         handle_load,do_dynamic_load_balancing,my_bin_size,maxval_container,integral_containers,maxval_cache,&
 !$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,coeffs_kind_max0,set_list_ij,&
 !$OMP         set_list_kl,iatom_start,iatom_end,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
 !$OMP         my_thread_id,my_bin_id,handle_bin,bintime_start,my_istart,my_current_counter,latom_block,tmp_block,&
@@ -411,18 +463,12 @@ CONTAINS
 !$OMP         tmp_screen_pgf1,tmp_screen_pgf2,cartesian_estimate,bintime_stop,iw,memsize_after,storage_counter_integrals,&
 !$OMP         stor_count_int_disk,stor_count_max_val,ene_x_aa,ene_x_bb,mb_size_p,mb_size_f,mb_size_buffers,afac,ene_x_aa_diag,&
 !$OMP         ene_x_bb_diag,act_atomic_block_offset,act_set_offset,j,handle_dist_ks,tmp_i8,tmp_i4,&
-!$OMP         etmp,nkimages,img,bin,eps_scaling_str,eps_schwarz_min_str)
+!$OMP         etmp,img,bin,eps_scaling_str,eps_schwarz_min_str)
 
       i_thread = 0
 !$    i_thread = omp_get_thread_num()
 
       actual_x_data => x_data(irep, i_thread + 1)
-!$OMP MASTER
-      shm_master_x_data => x_data(irep, 1)
-!$OMP END MASTER
-!$OMP BARRIER
-
-      do_periodic = actual_x_data%periodic_parameter%do_periodic
 
       IF (do_periodic) THEN
          ! ** Rebuild neighbor lists in case the cell has changed (i.e. NPT MD)
@@ -431,7 +477,6 @@ CONTAINS
                                         cell, i_thread)
       END IF
 
-      screening_parameter = actual_x_data%screening_parameter
       potential_parameter = actual_x_data%potential_parameter
 
       general_parameter = actual_x_data%general_parameter
@@ -443,11 +488,6 @@ CONTAINS
 
       basis_parameter => actual_x_data%basis_parameter
       basis_info => actual_x_data%basis_info
-
-      treat_lsd_in_core = general_parameter%treat_lsd_in_core
-
-      ncpu = para_env%num_pe
-      n_processes = ncpu*n_threads
 
       !! initialize some counters
       neris_total = 0_int_8
@@ -464,30 +504,7 @@ CONTAINS
       max_val_memory = 1_int_8
 
       max_am = basis_info%max_am
-
-      CALL get_qs_env(qs_env=qs_env, &
-                      atomic_kind_set=atomic_kind_set, &
-                      particle_set=particle_set)
-
-      do_p_screening = screening_parameter%do_initial_p_screening
-      ! Special treatment for MP2 with initial density screening
-      IF (do_p_screening) THEN
-         IF (ASSOCIATED(qs_env%mp2_env)) THEN
-            IF ((qs_env%mp2_env%ri_mp2%free_hfx_buffer)) THEN
-               do_p_screening = ((qs_env%mp2_env%p_screen) .AND. (qs_env%mp2_env%not_last_hfx))
-            ELSE
-               do_p_screening = .FALSE.
-            ENDIF
-         ENDIF
-      ENDIF
       max_set = basis_info%max_set
-      natom = SIZE(particle_set, 1)
-
-      ! Number of image matrices in k-point calculations (nkimages==1 -> no kpoints)
-      nkimages = dft_control%nimages
-
-      ALLOCATE (kind_of(natom))
-      CALL get_atomic_kind_set(atomic_kind_set=atomic_kind_set, kind_of=kind_of)
 
       !! precompute maximum nco and allocate scratch
       ncos_max = 0
@@ -556,6 +573,7 @@ CONTAINS
          ALLOCATE (pgf_list_ij(i)%image_list(nneighbors))
          ALLOCATE (pgf_list_kl(i)%image_list(nneighbors))
       END DO
+
 !$OMP BARRIER
 !$OMP MASTER
       !! Calculate helper array that stores if a certain atomic pair is associated in the KS matrix
@@ -583,7 +601,7 @@ CONTAINS
          END IF
       END IF
 
-      ! ** Set pointers
+      ! ** Set pointers which should be defined now
       shm_number_of_p_entries = shm_master_x_data%number_of_p_entries
       shm_is_assoc_atomic_block => shm_master_x_data%is_assoc_atomic_block
       shm_atomic_block_offset => shm_master_x_data%atomic_block_offset
@@ -595,49 +613,36 @@ CONTAINS
       ! ** Reset storage counter given by MAX_MEMORY by subtracting all buffers
       ! ** Fock and density Matrices (shared)
       subtr_size_mb = 2_int_8*shm_block_offset(ncpu + 1)
-      ! ** if non restricted ==> alpha/beta spin
-      IF (.NOT. treat_lsd_in_core) THEN
-         IF (is_unrestricted) subtr_size_mb = subtr_size_mb*2_int_8
-      END IF
-      ! ** Initial P only MAX(alpha,beta) (shared)
-      IF (do_p_screening .OR. screening_parameter%do_p_screening_forces) THEN
-         subtr_size_mb = subtr_size_mb + memory_parameter%size_p_screen
-      END IF
-      ! ** In core forces require their own initial P
-      IF (screening_parameter%do_p_screening_forces) THEN
-         IF (memory_parameter%treat_forces_in_core) THEN
-            subtr_size_mb = subtr_size_mb + memory_parameter%size_p_screen
-         END IF
-      END IF
-      ! ** primitive buffer (not shared by the threads)
-      subtr_size_mb = subtr_size_mb + nsgf_max**4*n_threads
-      ! ** density + fock buffers
-      subtr_size_mb = subtr_size_mb + 8_int_8*nsgf_max**2*n_threads
-      ! ** screening functions (shared)
-      ! ** coeffs_pgf
-      subtr_size_mb = subtr_size_mb + max_pgf**2*max_set**2*nkind**2
-      ! ** coeffs_set
-      subtr_size_mb = subtr_size_mb + max_set**2*nkind**2
-      ! ** coeffs_kind
-      subtr_size_mb = subtr_size_mb + nkind**2
-      ! ** radii_pgf
-      subtr_size_mb = subtr_size_mb + max_pgf**2*max_set**2*nkind**2
 
-      ! ** is_assoc (shared)
-      subtr_size_mb = subtr_size_mb + natom**2
+      ! ** if non restricted ==> alpha/beta spin
+      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) &
+         subtr_size_mb = subtr_size_mb*2_int_8
+
+      ! ** Initial P only MAX(alpha,beta) (shared)
+      IF (do_p_screening .OR. do_p_screening_forces) &
+         subtr_size_mb = subtr_size_mb + memory_parameter%size_p_screen
+
+      ! ** In core forces require their own initial P
+      IF (do_p_screening_forces .AND. memory_parameter%treat_forces_in_core) &
+         subtr_size_mb = subtr_size_mb &
+                         + memory_parameter%size_p_screen &
+                         + natom**2 ! ???
+
+      subtr_size_mb = subtr_size_mb &
+                      + nsgf_max**4*n_threads & ! primitive buffer (not shared by the threads)
+                      + 8_int_8*nsgf_max**2*n_threads & ! density + fock buffers
+                      + max_pgf**2*max_set**2*nkind**2 & ! screening functions (shared): coeffs_pgf
+                      + max_set**2*nkind**2 & ! ...: coeffs_set
+                      + nkind**2 & ! ...: coeffs_kind
+                      + max_pgf**2*max_set**2*nkind**2 & ! ...: radii_pgf
+                      + natom**2 ! is_assoc (shared)
 
       ! ** pmax_atom (shared)
-      IF (do_p_screening) THEN
+      IF (do_p_screening) &
          subtr_size_mb = subtr_size_mb + natom**2
-      END IF
-      IF (screening_parameter%do_p_screening_forces) THEN
-         IF (memory_parameter%treat_forces_in_core) THEN
-            subtr_size_mb = subtr_size_mb + natom**2
-         END IF
-      END IF
 
       ! ** Convert into MiB's
-      subtr_size_mb = subtr_size_mb*8_int_8/1024_int_8/1024_int_8
+      subtr_size_mb = subtr_size_mb*8_int_8/1024_int_8**2
 
       ! ** Subtracting all these buffers from MAX_MEMORY yields the amount
       ! ** of RAM that is left for the compressed integrals. When using threads
@@ -664,18 +669,8 @@ CONTAINS
          IF (.NOT. memory_parameter%treat_forces_in_core) memory_parameter%recalc_forces = .TRUE.
       END IF
 
-      !! Get screening parameter
-      eps_schwarz = screening_parameter%eps_schwarz
-      IF (eps_schwarz <= 0.0_dp) THEN
-         log10_eps_schwarz = log_zero
-      ELSE
-         log10_eps_schwarz = LOG10(eps_schwarz)
-      END IF
       !! get storage epsilon
       eps_storage = eps_schwarz*memory_parameter%eps_storage_scaling
-
-      !! If we have a hybrid functional, we may need only a fraction of exact exchange
-      hf_fraction = general_parameter%fraction
 
       !! The number of integrals that fit into the given MAX_MEMORY
 
@@ -774,12 +769,10 @@ CONTAINS
       full_ks_alpha => shm_master_x_data%full_ks_alpha
       full_ks_alpha = 0.0_dp
 
-      IF (.NOT. treat_lsd_in_core) THEN
-         IF (is_unrestricted) THEN
-            ALLOCATE (shm_master_x_data%full_ks_beta(shm_block_offset(ncpu + 1), nkimages))
-            full_ks_beta => shm_master_x_data%full_ks_beta
-            full_ks_beta = 0.0_dp
-         END IF
+      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) THEN
+         ALLOCATE (shm_master_x_data%full_ks_beta(shm_block_offset(ncpu + 1), nkimages))
+         full_ks_beta => shm_master_x_data%full_ks_beta
+         full_ks_beta = 0.0_dp
       END IF
 
       !! Initialize schwarz screening matrices for near field estimates and boxing screening matrices
@@ -815,13 +808,6 @@ CONTAINS
       radii_pgf => shm_master_x_data%pair_dist_radii_pgf
 !$OMP END MASTER
 !$OMP BARRIER
-
-      !! Initialize a prefactor depending on the fraction and the number of spins
-      IF (.NOT. is_unrestricted) THEN
-         fac = 0.5_dp*hf_fraction
-      ELSE
-         fac = 1.0_dp*hf_fraction
-      END IF
 
       !! Call routines that distribute the load on all processes. If we want to screen on a initial density matrix, there is
       !! an optional parameter. Of course, this is only done if the geometry did change
@@ -1710,6 +1696,23 @@ CONTAINS
 !$OMP BARRIER
 
       DEALLOCATE (primitive_integrals)
+      DEALLOCATE (pbd_buf, pbc_buf, pad_buf, pac_buf)
+      DEALLOCATE (kbd_buf, kbc_buf, kad_buf, kac_buf)
+      DEALLOCATE (set_list_ij, set_list_kl)
+
+      DO i = 1, max_pgf**2
+         DEALLOCATE (pgf_list_ij(i)%image_list)
+         DEALLOCATE (pgf_list_kl(i)%image_list)
+      END DO
+
+      DEALLOCATE (pgf_list_ij)
+      DEALLOCATE (pgf_list_kl)
+      DEALLOCATE (pgf_product_list)
+
+      DEALLOCATE (max_contraction)
+
+      DEALLOCATE (ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp)
+
 !$OMP BARRIER
       !! Get some number about ERIS
 !$OMP ATOMIC
@@ -1781,17 +1784,17 @@ CONTAINS
       IF (do_p_screening) THEN
          mb_size_buffers = mb_size_buffers + natom**2
       END IF
-      IF (screening_parameter%do_p_screening_forces) THEN
+      IF (do_p_screening_forces) THEN
          IF (memory_parameter%treat_forces_in_core) THEN
             mb_size_buffers = mb_size_buffers + natom**2
          END IF
       END IF
       ! ** Initial P only MAX(alpha,beta) (shared)
-      IF (do_p_screening .OR. screening_parameter%do_p_screening_forces) THEN
+      IF (do_p_screening .OR. do_p_screening_forces) THEN
          mb_size_buffers = mb_size_buffers + memory_parameter%size_p_screen
       END IF
       ! ** In core forces require their own initial P
-      IF (screening_parameter%do_p_screening_forces) THEN
+      IF (do_p_screening_forces) THEN
          IF (memory_parameter%treat_forces_in_core) THEN
             mb_size_buffers = mb_size_buffers + memory_parameter%size_p_screen
          END IF
@@ -2070,7 +2073,7 @@ CONTAINS
          END DO
       END IF
 !$OMP END CRITICAL(hfxenergy_out_critical)
-!$OMP BARRIER
+
 !$OMP MASTER
       DEALLOCATE (full_density_alpha)
 
@@ -2080,25 +2083,9 @@ CONTAINS
       IF (do_dynamic_load_balancing) &
          DEALLOCATE (shm_master_x_data%task_list)
 !$OMP END MASTER
-      DEALLOCATE (pbd_buf, pbc_buf, pad_buf, pac_buf)
-      DEALLOCATE (kbd_buf, kbc_buf, kad_buf, kac_buf)
-      DEALLOCATE (set_list_ij, set_list_kl)
-
-      DO i = 1, max_pgf**2
-         DEALLOCATE (pgf_list_ij(i)%image_list)
-         DEALLOCATE (pgf_list_kl(i)%image_list)
-      END DO
-
-      DEALLOCATE (pgf_list_ij)
-      DEALLOCATE (pgf_list_kl)
-      DEALLOCATE (pgf_product_list)
-
-      DEALLOCATE (max_contraction, kind_of)
-
-      DEALLOCATE (ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp)
-
-!$OMP BARRIER
 !$OMP END PARALLEL
+
+      DEALLOCATE (kind_of)
 
       CALL timestop(handle)
    END SUBROUTINE integrate_four_center
