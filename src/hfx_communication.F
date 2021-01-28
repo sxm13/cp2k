@@ -431,13 +431,13 @@ CONTAINS
 
       TYPE(dbcsr_type), POINTER                          :: matrix
       TYPE(hfx_basis_type), DIMENSION(:)                 :: basis_parameter
-      INTEGER, DIMENSION(:)                              :: kind_of
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
       INTEGER, DIMENSION(:, :), INTENT(OUT)              :: is_assoc_atomic_block
       INTEGER, INTENT(OUT)                               :: number_of_p_entries
-      TYPE(cp_para_env_type), POINTER                    :: para_env
-      INTEGER, DIMENSION(:, :), POINTER                  :: atomic_block_offset
-      INTEGER, DIMENSION(:, :, :, :), POINTER            :: set_offset
-      INTEGER, DIMENSION(:), POINTER                     :: block_offset
+      TYPE(cp_para_env_type), INTENT(IN)                 :: para_env
+      INTEGER, DIMENSION(:, :), INTENT(OUT)              :: atomic_block_offset
+      INTEGER, DIMENSION(:, :, :, :), INTENT(OUT)        :: set_offset
+      INTEGER, DIMENSION(:), INTENT(OUT)                 :: block_offset
       TYPE(hfx_2D_map), DIMENSION(:), POINTER            :: map_atoms_to_cpus
       INTEGER                                            :: nkind
 
