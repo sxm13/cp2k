@@ -190,7 +190,7 @@ CONTAINS
       INTEGER, SAVE                                      :: shm_number_of_p_entries
       LOGICAL :: bins_left, buffer_overflow, do_disk_storage, do_dynamic_load_balancing, do_it, &
          do_kpoints, do_p_screening, do_periodic, do_print_load_balance_info, is_anti_symmetric, &
-         is_unrestricted, ks_fully_occ, my_geo_change, treat_lsd_in_core, use_disk_storage
+         is_unrestricted, my_geo_change, treat_lsd_in_core, use_disk_storage
       LOGICAL, DIMENSION(:, :), POINTER                  :: shm_atomic_pair_list
       REAL(dp) :: afac, bintime_start, bintime_stop, cartesian_estimate, compression_factor, &
          compression_factor_disk, ene_x_aa, ene_x_aa_diag, ene_x_bb, ene_x_bb_diag, eps_schwarz, &
@@ -392,7 +392,7 @@ CONTAINS
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
 !$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,max_contraction,&
 !$OMP         max_pgf,jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
-!$OMP         pgf_product_list,ks_fully_occ,subtr_size_mb,use_disk_storage,counter,do_disk_storage,&
+!$OMP         pgf_product_list,subtr_size_mb,use_disk_storage,counter,do_disk_storage,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,eps_schwarz,&
 !$OMP         log10_eps_schwarz,eps_storage,hf_fraction,buffer_overflow,logger,private_lib,handle_getp,&
 !$OMP         fac,handle_load,do_dynamic_load_balancing,my_bin_size,maxval_container,integral_containers,maxval_cache,&
@@ -575,17 +575,7 @@ CONTAINS
          shm_is_assoc_atomic_block => shm_master_x_data%is_assoc_atomic_block
 
          !! Get occupation of KS-matrix
-         ks_fully_occ = .TRUE.
-         outer: DO iatom = 1, natom
-            DO jatom = iatom, natom
-               IF (shm_is_assoc_atomic_block(jatom, iatom) == 0) THEN
-                  ks_fully_occ = .FALSE.
-                  EXIT outer
-               END IF
-            END DO
-         END DO outer
-
-         IF (.NOT. ks_fully_occ) THEN
+         IF (ANY(shm_is_assoc_atomic_block(1:natom, 1:natom) == 0)) THEN
             CALL cp_warn(__LOCATION__, &
                          "The Kohn Sham matrix is not 100% occupied. This "// &
                          "may result in incorrect Hartree-Fock results. Try to decrease EPS_PGF_ORB "// &
