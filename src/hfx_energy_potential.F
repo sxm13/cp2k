@@ -1719,10 +1719,10 @@ CONTAINS
 !$OMP ATOMIC
       shm_nprim_ints = shm_nprim_ints + nprim_ints
 
-      storage_counter_integrals = memory_parameter%actual_memory_usage* &
-                                  memory_parameter%cache_size
-      stor_count_int_disk = memory_parameter%actual_memory_usage_disk* &
-                            memory_parameter%cache_size
+      storage_counter_integrals = INT(memory_parameter%actual_memory_usage, KIND=int_8) &
+                                  *memory_parameter%cache_size
+      stor_count_int_disk = INT(memory_parameter%actual_memory_usage_disk, KIND=int_8) &
+                            *memory_parameter%cache_size
       stor_count_max_val = max_val_memory*memory_parameter%cache_size
 !$OMP ATOMIC
       shm_storage_counter_integrals = shm_storage_counter_integrals + storage_counter_integrals
