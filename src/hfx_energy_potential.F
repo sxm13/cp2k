@@ -78,7 +78,6 @@ MODULE hfx_energy_potential
    USE machine,                         ONLY: m_flush,&
                                               m_memory,&
                                               m_walltime
-   USE mathconstants,                   ONLY: fac
    USE message_passing,                 ONLY: mp_max,&
                                               mp_sum,&
                                               mp_sync
