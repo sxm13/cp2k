@@ -25,6 +25,7 @@
           EPS_SCHWARZ 1.0E-7
         &END
         &INTERACTION_POTENTIAL
+            CUTOFF_RADIUS  4.0
             POTENTIAL_TYPE SHORTRANGE
             OMEGA 0.5
         &END

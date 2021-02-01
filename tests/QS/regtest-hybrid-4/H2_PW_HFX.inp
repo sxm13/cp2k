@@ -35,6 +35,7 @@
        &END
        &INTERACTION_POTENTIAL
          POTENTIAL_TYPE COULOMB 
+         CUTOFF_RADIUS  12.5
        &END
        &MEMORY
          MAX_MEMORY 100

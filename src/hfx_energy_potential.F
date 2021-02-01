@@ -1037,8 +1037,6 @@ CONTAINS
 !$OMP END MASTER
 !$OMP BARRIER
 
-      CPASSERT(nkimages == 1)
-
       my_bin_size = SIZE(actual_x_data%distribution_energy)
       nblocks = load_balance_parameter%nblocks
 
@@ -1756,9 +1754,6 @@ CONTAINS
       !! Calculate the exchange energies from the Kohn-Sham matrix. Before we can go on, we have to symmetrize.
       ene_x_aa = 0.0_dp
       ene_x_bb = 0.0_dp
-
-      ! from here on it should be ok with nkimages /= 1 !?!?!
-      CPASSERT(nkimages == 1)
 
       mb_size_p = shm_block_offset(ncpu + 1)/1024/128
       mb_size_f = shm_block_offset(ncpu + 1)/1024/128
