@@ -636,7 +636,6 @@ CONTAINS
 !$OMP                                  shm_atomic_pair_list,&
 !$OMP                                  do_print_load_balance_info,&
 !$OMP                                  subtr_size_mb,&
-!$OMP                                  memsize_after,&
 !$OMP                                  logger) &
 !$OMP PRIVATE(i_thread,actual_x_data,potential_parameter,&
 !$OMP         general_parameter,load_balance_parameter,memory_parameter,cache_size,bits_max_val,&
@@ -648,8 +647,8 @@ CONTAINS
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,&
 !$OMP         eps_storage,buffer_overflow,private_lib,handle_getp,&
 !$OMP         handle_load,my_bin_size,maxval_container,integral_containers,maxval_cache,&
-!$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,coeffs_kind_max0,set_list_ij,&
-!$OMP         set_list_kl,iatom_start,iatom_end,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
+!$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,coeffs_kind_max0,iset,jset,set_list_ij,&
+!$OMP         set_list_kl,iatom,iatom_start,iatom_end,jatom,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
 !$OMP         my_thread_id,my_bin_id,handle_bin,bintime_start,my_istart,my_current_counter,latom_block,tmp_block,&
 !$OMP         katom_block,katom_start,katom_end,latom_start,latom_end,pmax_blocks,list_ij,list_kl,i_set_list_ij_start,&
 !$OMP         i_set_list_ij_stop,ra,rb,rab2,la_min,zeta,sphi_a_ext,nsgfl_a,sphi_a_u1,sphi_a_u2,sphi_a_u3,&
@@ -661,10 +660,8 @@ CONTAINS
 !$OMP         mem_compression_counter_disk,max_val1,sphi_a_ext_set,sphi_b_ext_set,kset,lset,max_val2_set,max_val2,&
 !$OMP         sphi_c_ext_set,sphi_d_ext_set,pmax_entry,log10_pmax,current_counter,nints,estimate_to_store_int,&
 !$OMP         spherical_estimate,nbits,buffer_left,buffer_start,buffer_size,max_contraction_val,tmp_r_1,tmp_r_2,&
-!$OMP         tmp_screen_pgf1,tmp_screen_pgf2,cartesian_estimate,bintime_stop,iw,&
-!$OMP         ene_x_aa,ene_x_bb,afac,ene_x_aa_diag,&
-!$OMP         ene_x_bb_diag,act_atomic_block_offset,act_set_offset,j,handle_dist_ks,tmp_i4,&
-!$OMP         etmp,img,bin,eps_scaling_str,eps_schwarz_min_str) &
+!$OMP         tmp_screen_pgf1,tmp_screen_pgf2,cartesian_estimate,bintime_stop,iw,j,tmp_i4,&
+!$OMP         bin,eps_scaling_str,eps_schwarz_min_str) &
 !$OMP REDUCTION(+: shm_neris_total,shm_neris_onthefly,shm_neris_incore,shm_neris_disk,&
 !$OMP              shm_nprim_ints,shm_stor_counter_integrals,shm_stor_count_int_disk,&
 !$OMP              shm_stor_count_max_val,shm_mem_compression_counter) &
@@ -1683,11 +1680,8 @@ CONTAINS
 !$OMP END MASTER
       END IF
 
-!$OMP BARRIER
-!$OMP MASTER
+      ! sample the memory prior to deallocation (OMP-max-reduced)
       CALL m_memory(memsize_after)
-!$OMP END MASTER
-!$OMP BARRIER
 
       DEALLOCATE (primitive_integrals)
       DEALLOCATE (pbd_buf, pbc_buf, pad_buf, pac_buf)
@@ -1720,137 +1714,7 @@ CONTAINS
       shm_mem_compression_counter = memory_parameter%actual_memory_usage*memory_parameter%cache_size
 
 !$OMP MASTER
-      !! Calculate the exchange energies from the Kohn-Sham matrix. Before we can go on, we have to symmetrize.
-      ene_x_aa = 0.0_dp
-      ene_x_bb = 0.0_dp
-
-      afac = 1.0_dp
-      IF (is_anti_symmetric) afac = -1.0_dp
       CALL timestop(handle_main)
-      ene_x_aa_diag = 0.0_dp
-      ene_x_bb_diag = 0.0_dp
-      DO iatom = 1, natom
-         ikind = kind_of(iatom)
-         nseta = basis_parameter(ikind)%nset
-         nsgfa => basis_parameter(ikind)%nsgf
-         jatom = iatom
-         jkind = kind_of(jatom)
-         nsetb = basis_parameter(jkind)%nset
-         nsgfb => basis_parameter(jkind)%nsgf
-         act_atomic_block_offset = shm_atomic_block_offset(jatom, iatom)
-         DO img = 1, nkimages
-            DO iset = 1, nseta
-               DO jset = 1, nsetb
-                  act_set_offset = shm_set_offset(jset, iset, jkind, ikind)
-                  i = act_set_offset + act_atomic_block_offset - 1
-                  DO ma = 1, nsgfa(iset)
-                     j = shm_set_offset(iset, jset, jkind, ikind) + act_atomic_block_offset - 1 + ma - 1
-                     DO mb = 1, nsgfb(jset)
-                        IF (i > j) THEN
-                           full_ks_alpha(i, img) = (full_ks_alpha(i, img) + full_ks_alpha(j, img)*afac)
-                           full_ks_alpha(j, img) = full_ks_alpha(i, img)*afac
-                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
-                              full_ks_beta(i, img) = (full_ks_beta(i, img) + full_ks_beta(j, img)*afac)
-                              full_ks_beta(j, img) = full_ks_beta(i, img)*afac
-                           END IF
-                        END IF
-                        ! ** For adiabatically rescaled functionals we need the energy coming from the diagonal elements
-                        IF (i == j) THEN
-                           ene_x_aa_diag = ene_x_aa_diag + full_ks_alpha(i, img)*full_density_alpha(i, img)
-                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
-                              ene_x_bb_diag = ene_x_bb_diag + full_ks_beta(i, img)*full_density_beta(i, img)
-                           END IF
-                        END IF
-                        i = i + 1
-                        j = j + nsgfa(iset)
-                     END DO
-                  END DO
-               END DO
-            END DO
-         END DO
-      END DO
-
-      CALL mp_sync(para_env%group)
-      afac = 1.0_dp
-      IF (is_anti_symmetric) afac = 0._dp
-      IF (distribute_fock_matrix) THEN
-         !! Distribute the current KS-matrix to all the processes
-         CALL timeset(routineN//"_dist_KS", handle_dist_ks)
-         DO img = 1, nkimages
-            CALL distribute_ks_matrix(para_env, full_ks_alpha(:, img), ks_matrix(ispin, img)%matrix, shm_number_of_p_entries, &
-                                      shm_block_offset, kind_of, basis_parameter, &
-                                      off_diag_fac=0.5_dp, diag_fac=afac)
-         END DO
-
-         NULLIFY (full_ks_alpha)
-         DEALLOCATE (shm_master_x_data%full_ks_alpha)
-
-         IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
-            DO img = 1, nkimages
-               CALL distribute_ks_matrix(para_env, full_ks_beta(:, img), ks_matrix(2, img)%matrix, shm_number_of_p_entries, &
-                                         shm_block_offset, kind_of, basis_parameter, &
-                                         off_diag_fac=0.5_dp, diag_fac=afac)
-            END DO
-            NULLIFY (full_ks_beta)
-            DEALLOCATE (shm_master_x_data%full_ks_beta)
-         END IF
-         CALL timestop(handle_dist_ks)
-
-         !! ** Calculate the exchange energy
-         ene_x_aa = 0.0_dp
-         DO img = 1, nkimages
-            CALL dbcsr_dot(ks_matrix(ispin, img)%matrix, rho_ao(ispin, img)%matrix, &
-                           etmp)
-            ene_x_aa = ene_x_aa + etmp
-         END DO
-         !for ADMMS, we need the exchange matrix k(d) for both spins
-         IF (dft_control%do_admm) THEN
-            CPASSERT(nkimages == 1)
-            CALL dbcsr_copy(matrix_ks_aux_fit_hfx(ispin)%matrix, ks_matrix(ispin, 1)%matrix, &
-                            name="HF exch. part of matrix_ks_aux_fit for ADMMS")
-         END IF
-
-         ene_x_bb = 0.0_dp
-         IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
-            DO img = 1, nkimages
-               CALL dbcsr_dot(ks_matrix(2, img)%matrix, rho_ao(2, img)%matrix, &
-                              etmp)
-               ene_x_bb = ene_x_bb + etmp
-            END DO
-            !for ADMMS, we need the exchange matrix k(d) for both spins
-            IF (dft_control%do_admm) THEN
-               CPASSERT(nkimages == 1)
-               CALL dbcsr_copy(matrix_ks_aux_fit_hfx(2)%matrix, ks_matrix(2, 1)%matrix, &
-                               name="HF exch. part of matrix_ks_aux_fit for ADMMS")
-            END IF
-         END IF
-
-         !! Update energy type
-         ehfx = 0.5_dp*(ene_x_aa + ene_x_bb)
-      ELSE
-         ! ** It is easier to correct the following expression by the diagonal energy contribution,
-         ! ** than explicitly going throuhg the diagonal elements
-         DO img = 1, nkimages
-            DO pa = 1, SIZE(full_ks_alpha, 1)
-               ene_x_aa = ene_x_aa + full_ks_alpha(pa, img)*full_density_alpha(pa, img)
-            END DO
-         END DO
-         ! ** Now correct
-         ene_x_aa = (ene_x_aa + ene_x_aa_diag)*0.5_dp
-         IF (is_unrestricted) THEN
-            DO img = 1, nkimages
-               DO pa = 1, SIZE(full_ks_beta, 1)
-                  ene_x_bb = ene_x_bb + full_ks_beta(pa, img)*full_density_beta(pa, img)
-               END DO
-            END DO
-            ! ** Now correct
-            ene_x_bb = (ene_x_bb + ene_x_bb_diag)*0.5_dp
-         END IF
-         CALL mp_sum(ene_x_aa, para_env%group)
-         IF (is_unrestricted) CALL mp_sum(ene_x_bb, para_env%group)
-         ehfx = 0.5_dp*(ene_x_aa + ene_x_bb)
-      END IF
-
 !$OMP END MASTER
 
       ! cache maintenance if not doing everythong on the fly
@@ -1915,8 +1779,143 @@ CONTAINS
 !$OMP END MASTER
 !$OMP END PARALLEL
 
-      ! the following is used in derivatives_four_center, replicate over all x_data
-      x_data(irep, :)%memory_parameter%final_comp_counter_energy = shm_mem_compression_counter
+      !! Calculate the exchange energies from the Kohn-Sham matrix. Before we can go on, we have to symmetrize.
+
+      basis_parameter => shm_master_x_data%basis_parameter
+      afac = 1.0_dp
+      IF (is_anti_symmetric) afac = -1.0_dp
+      ene_x_aa_diag = 0.0_dp
+      ene_x_bb_diag = 0.0_dp
+      DO iatom = 1, natom
+         ikind = kind_of(iatom)
+         nseta = basis_parameter(ikind)%nset
+         nsgfa => basis_parameter(ikind)%nsgf
+         jatom = iatom
+         jkind = kind_of(jatom)
+         nsetb = basis_parameter(jkind)%nset
+         nsgfb => basis_parameter(jkind)%nsgf
+         act_atomic_block_offset = shm_atomic_block_offset(jatom, iatom)
+         DO img = 1, nkimages
+            DO iset = 1, nseta
+               DO jset = 1, nsetb
+                  act_set_offset = shm_set_offset(jset, iset, jkind, ikind)
+                  i = act_set_offset + act_atomic_block_offset - 1
+                  DO ma = 1, nsgfa(iset)
+                     j = shm_set_offset(iset, jset, jkind, ikind) + act_atomic_block_offset - 1 + ma - 1
+                     DO mb = 1, nsgfb(jset)
+                        IF (i > j) THEN
+                           full_ks_alpha(i, img) = (full_ks_alpha(i, img) + full_ks_alpha(j, img)*afac)
+                           full_ks_alpha(j, img) = full_ks_alpha(i, img)*afac
+                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+                              full_ks_beta(i, img) = (full_ks_beta(i, img) + full_ks_beta(j, img)*afac)
+                              full_ks_beta(j, img) = full_ks_beta(i, img)*afac
+                           END IF
+                        END IF
+                        ! ** For adiabatically rescaled functionals we need the energy coming from the diagonal elements
+                        IF (i == j) THEN
+                           ene_x_aa_diag = ene_x_aa_diag + full_ks_alpha(i, img)*full_density_alpha(i, img)
+                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+                              ene_x_bb_diag = ene_x_bb_diag + full_ks_beta(i, img)*full_density_beta(i, img)
+                           END IF
+                        END IF
+                        i = i + 1
+                        j = j + nsgfa(iset)
+                     END DO
+                  END DO
+               END DO
+            END DO
+         END DO
+      END DO
+
+      CALL mp_sync(para_env%group)
+
+      afac = 1.0_dp
+      IF (is_anti_symmetric) afac = 0._dp
+      ene_x_aa = 0.0_dp
+      ene_x_bb = 0.0_dp
+      IF (distribute_fock_matrix) THEN
+         !! Distribute the current KS-matrix to all the processes
+         CALL timeset(routineN//"_dist_KS", handle_dist_ks)
+         DO img = 1, nkimages
+            CALL distribute_ks_matrix(para_env, &
+                                      full_ks_alpha(:, img), &
+                                      ks_matrix(ispin, img)%matrix, &
+                                      shm_number_of_p_entries, &
+                                      shm_block_offset, &
+                                      kind_of, basis_parameter, &
+                                      off_diag_fac=0.5_dp, diag_fac=afac)
+         END DO
+
+         NULLIFY (full_ks_alpha)
+         DEALLOCATE (shm_master_x_data%full_ks_alpha)
+
+         IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+            DO img = 1, nkimages
+               CALL distribute_ks_matrix(para_env, &
+                                         full_ks_beta(:, img), &
+                                         ks_matrix(2, img)%matrix, &
+                                         shm_number_of_p_entries, &
+                                         shm_block_offset, &
+                                         kind_of, basis_parameter, &
+                                         off_diag_fac=0.5_dp, diag_fac=afac)
+            END DO
+            NULLIFY (full_ks_beta)
+            DEALLOCATE (shm_master_x_data%full_ks_beta)
+         END IF
+         CALL timestop(handle_dist_ks)
+
+         !! ** Calculate the exchange energy
+         DO img = 1, nkimages
+            CALL dbcsr_dot(ks_matrix(ispin, img)%matrix, rho_ao(ispin, img)%matrix, &
+                           etmp)
+            ene_x_aa = ene_x_aa + etmp
+         END DO
+         !for ADMMS, we need the exchange matrix k(d) for both spins
+         IF (dft_control%do_admm) THEN
+            CPASSERT(nkimages == 1)
+            CALL dbcsr_copy(matrix_ks_aux_fit_hfx(ispin)%matrix, ks_matrix(ispin, 1)%matrix, &
+                            name="HF exch. part of matrix_ks_aux_fit for ADMMS")
+         END IF
+
+         IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+            DO img = 1, nkimages
+               CALL dbcsr_dot(ks_matrix(2, img)%matrix, rho_ao(2, img)%matrix, &
+                              etmp)
+               ene_x_bb = ene_x_bb + etmp
+            END DO
+            !for ADMMS, we need the exchange matrix k(d) for both spins
+            IF (dft_control%do_admm) THEN
+               CPASSERT(nkimages == 1)
+               CALL dbcsr_copy(matrix_ks_aux_fit_hfx(2)%matrix, ks_matrix(2, 1)%matrix, &
+                               name="HF exch. part of matrix_ks_aux_fit for ADMMS")
+            END IF
+         END IF
+
+         !! Update energy type
+         ehfx = 0.5_dp*(ene_x_aa + ene_x_bb)
+      ELSE
+         ! ** It is easier to correct the following expression by the diagonal energy contribution,
+         ! ** than explicitly going throuhg the diagonal elements
+         DO img = 1, nkimages
+            DO pa = 1, SIZE(full_ks_alpha, 1)
+               ene_x_aa = ene_x_aa + full_ks_alpha(pa, img)*full_density_alpha(pa, img)
+            END DO
+         END DO
+         ! ** Now correct
+         ene_x_aa = (ene_x_aa + ene_x_aa_diag)*0.5_dp
+         IF (is_unrestricted) THEN
+            DO img = 1, nkimages
+               DO pa = 1, SIZE(full_ks_beta, 1)
+                  ene_x_bb = ene_x_bb + full_ks_beta(pa, img)*full_density_beta(pa, img)
+               END DO
+            END DO
+            ! ** Now correct
+            ene_x_bb = (ene_x_bb + ene_x_bb_diag)*0.5_dp
+         END IF
+         CALL mp_sum(ene_x_aa, para_env%group)
+         IF (is_unrestricted) CALL mp_sum(ene_x_bb, para_env%group)
+         ehfx = 0.5_dp*(ene_x_aa + ene_x_bb)
+      END IF
 
       DEALLOCATE (full_density_alpha)
 
@@ -1924,6 +1923,9 @@ CONTAINS
          DEALLOCATE (full_density_beta)
 
       DEALLOCATE (kind_of)
+
+      ! the following is used in derivatives_four_center, replicate over all x_data
+      x_data(irep, :)%memory_parameter%final_comp_counter_energy = shm_mem_compression_counter
 
       ! Print some memeory information if this was the first step
       IF (my_geo_change) THEN
