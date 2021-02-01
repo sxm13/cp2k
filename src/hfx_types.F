@@ -2473,8 +2473,7 @@ CONTAINS
 !> \author Manuel Guidon
 ! **************************************************************************************************
    SUBROUTINE hfx_reset_memory_usage_counter(memory_parameter, subtr_size_mb)
-
-      TYPE(hfx_memory_type)                              :: memory_parameter
+      TYPE(hfx_memory_type), INTENT(INOUT)               :: memory_parameter
       INTEGER(int_8), INTENT(IN)                         :: subtr_size_mb
 
       INTEGER(int_8)                                     :: max_memory

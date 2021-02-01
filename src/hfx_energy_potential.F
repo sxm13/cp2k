@@ -164,9 +164,9 @@ CONTAINS
       INTEGER :: katom_start, kind_kind_idx, kkind, kset, l_max, latom, latom_block, latom_end, &
          latom_start, lkind, lset, ma, max_am, max_pgf, max_set, mb, my_bin_id, my_bin_size, &
          my_thread_id, n_threads, natom, nbits, ncob, ncos_max, nints, nkimages, nkind, &
-         nneighbors, nseta, nsetb, nsgf_max, pa, sgfb, shm_task_counter, shm_total_bins, &
-         sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, sphi_b_u3, sphi_c_u1, sphi_c_u2, &
-         sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, tmp_i4, unit_id
+         nneighbors, nseta, nsetb, nsgf_max, pa, sgfb, shm_number_of_p_entries, shm_task_counter, &
+         shm_total_bins, sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, sphi_b_u3, &
+         sphi_c_u1, sphi_c_u2, sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, tmp_i4, unit_id
       INTEGER(int_8) :: atom_block, counter, estimate_to_store_int, max_val_memory, &
          mb_size_buffers, mb_size_f, mb_size_p, mem_compression_counter, &
          mem_compression_counter_disk, mem_eris, mem_eris_disk, mem_max_val, memsize_after, &
@@ -182,11 +182,10 @@ CONTAINS
       INTEGER, DIMENSION(:), POINTER :: la_max, la_min, lb_max, lb_min, lc_max, lc_min, ld_max, &
          ld_min, npgfa, npgfb, npgfc, npgfd, nsgfa, nsgfb, nsgfc, nsgfd, shm_block_offset
       INTEGER, DIMENSION(:, :), POINTER :: first_sgfb, nsgfl_a, nsgfl_b, nsgfl_c, nsgfl_d, &
-         offset_ac_set, offset_ad_set, offset_bc_set, offset_bd_set, shm_atomic_block_offset
-      INTEGER, DIMENSION(:, :), POINTER, SAVE            :: shm_is_assoc_atomic_block
+         offset_ac_set, offset_ad_set, offset_bc_set, offset_bd_set, shm_atomic_block_offset, &
+         shm_is_assoc_atomic_block
       INTEGER, DIMENSION(:, :, :), POINTER               :: cell_to_index
       INTEGER, DIMENSION(:, :, :, :), POINTER            :: shm_set_offset
-      INTEGER, SAVE                                      :: shm_number_of_p_entries
       LOGICAL :: bins_left, buffer_overflow, do_disk_storage, do_dynamic_load_balancing, do_it, &
          do_kpoints, do_p_screening, do_p_screening_forces, do_periodic, &
          do_print_load_balance_info, is_anti_symmetric, is_unrestricted, my_geo_change, &
@@ -363,9 +362,157 @@ CONTAINS
 
       treat_lsd_in_core = shm_master_x_data%general_parameter%treat_lsd_in_core
 
-      !! If we have a hybrid functional, we may need only a fraction of exact exchange
-      !! Initialize a prefactor depending on the fraction and the number of spins
+      ! whether the user requested to use disk storage is not thread-dependent
+      ! actual usage can vary, though, since storage is per-thread
+      do_disk_storage = shm_master_x_data%memory_parameter%do_disk_storage
+
+      do_dynamic_load_balancing = (n_threads > 1) .AND. (.NOT. do_disk_storage)
+
+      ! If we have a hybrid functional, we may need only a fraction of exact exchange
+      ! Initialize a prefactor depending on the fraction and the number of spins
       fac = shm_master_x_data%general_parameter%fraction*MERGE(1.0_dp, 0.5_dp, is_unrestricted)
+
+      ! Calculate helper array that stores if a certain atomic pair is associated in the KS matrix
+      ! Can we assume that all matrices ks_matrix(i,j) have the same occupation pattern?
+      IF (my_geo_change) THEN
+         CALL get_atomic_block_maps(ks_matrix(1, 1)%matrix, &
+                                    shm_master_x_data%basis_parameter, &
+                                    kind_of, &
+                                    shm_master_x_data%is_assoc_atomic_block, &
+                                    shm_master_x_data%number_of_p_entries, &
+                                    para_env, &
+                                    shm_master_x_data%atomic_block_offset, &
+                                    shm_master_x_data%set_offset, &
+                                    shm_master_x_data%block_offset, &
+                                    shm_master_x_data%map_atoms_to_cpus, &
+                                    nkind)
+
+         ! Check occupation of KS-matrix, only warn if geometry changed 'cause that's when the occupation can change
+         IF (ANY(shm_master_x_data%is_assoc_atomic_block == 0)) THEN
+            CALL cp_warn(__LOCATION__, &
+                         "The Kohn Sham matrix is not 100% occupied. This "// &
+                         "may result in incorrect Hartree-Fock results. Try to decrease EPS_PGF_ORB "// &
+                         "and EPS_FILTER_MATRIX in the QS section. For more information "// &
+                         "see FAQ: https://www.cp2k.org/faq:hfx_eps_warning")
+         END IF
+      END IF
+
+      ! Set pointers which should be defined now
+      shm_number_of_p_entries = shm_master_x_data%number_of_p_entries
+      shm_is_assoc_atomic_block => shm_master_x_data%is_assoc_atomic_block
+      shm_atomic_block_offset => shm_master_x_data%atomic_block_offset
+      shm_set_offset => shm_master_x_data%set_offset
+      shm_block_offset => shm_master_x_data%block_offset
+
+      ! Get the full density from all the processors
+      NULLIFY (full_density_alpha, full_density_beta)
+      ALLOCATE (full_density_alpha(shm_block_offset(ncpu + 1), nkimages))
+      IF (.NOT. treat_lsd_in_core .OR. .NOT. is_unrestricted) THEN
+         CALL timeset(routineN//"_getP", handle_getP)
+         DO img = 1, nkimages
+            CALL get_full_density(para_env, &
+                                  full_density_alpha(:, img), &
+                                  rho_ao(ispin, img)%matrix, &
+                                  shm_number_of_p_entries, &
+                                  shm_master_x_data%block_offset, &
+                                  kind_of, &
+                                  shm_master_x_data%basis_parameter, &
+                                  get_max_vals_spin=.FALSE., &
+                                  antisymmetric=is_anti_symmetric)
+         END DO
+
+         IF (is_unrestricted) THEN
+            ALLOCATE (full_density_beta(shm_block_offset(ncpu + 1), nkimages))
+            DO img = 1, nkimages
+               CALL get_full_density(para_env, &
+                                     full_density_beta(:, img), &
+                                     rho_ao(2, img)%matrix, &
+                                     shm_number_of_p_entries, &
+                                     shm_master_x_data%block_offset, &
+                                     kind_of, &
+                                     shm_master_x_data%basis_parameter, &
+                                     get_max_vals_spin=.FALSE., &
+                                     antisymmetric=is_anti_symmetric)
+            END DO
+         END IF
+         CALL timestop(handle_getP)
+
+         ! Calculate the max values of the density matrix actual_pmax stores the data from the actual density matrix
+         !! and x_data%initial_p stores the same for the initial guess. The initial guess is updated only in the case of
+         !! a changed geometry
+         NULLIFY (shm_initial_p)
+         IF (do_p_screening) THEN
+            shm_initial_p => shm_master_x_data%initial_p
+            shm_pmax_atom => shm_master_x_data%pmax_atom
+            IF (my_geo_change) THEN
+               CALL update_pmax_mat(shm_master_x_data%initial_p, &
+                                    shm_master_x_data%map_atom_to_kind_atom, &
+                                    shm_master_x_data%set_offset, &
+                                    shm_master_x_data%atomic_block_offset, &
+                                    shm_pmax_atom, &
+                                    full_density_alpha, full_density_beta, &
+                                    natom, kind_of, shm_master_x_data%basis_parameter, &
+                                    nkind, shm_is_assoc_atomic_block)
+            END IF
+         END IF
+      ELSE
+         IF (do_p_screening) THEN
+            CALL timeset(routineN//"_getP", handle_getP)
+            DO img = 1, nkimages
+               CALL get_full_density(para_env, &
+                                     full_density_alpha(:, img), &
+                                     rho_ao(1, img)%matrix, &
+                                     shm_number_of_p_entries, &
+                                     shm_master_x_data%block_offset, &
+                                     kind_of, &
+                                     shm_master_x_data%basis_parameter, &
+                                     get_max_vals_spin=.TRUE., &
+                                     rho_beta=rho_ao(2, img)%matrix, &
+                                     antisymmetric=is_anti_symmetric)
+            END DO
+            CALL timestop(handle_getP)
+
+            !! Calculate the max values of the density matrix actual_pmax stores the data from the actual density matrix
+            !! and x_data%initial_p stores the same for the initial guess. The initial guess is updated only in the case of
+            !! a changed geometry
+            NULLIFY (shm_initial_p)
+            shm_initial_p => actual_x_data%initial_p
+            shm_pmax_atom => shm_master_x_data%pmax_atom
+            IF (my_geo_change) THEN
+               CALL update_pmax_mat(shm_master_x_data%initial_p, &
+                                    shm_master_x_data%map_atom_to_kind_atom, &
+                                    shm_master_x_data%set_offset, &
+                                    shm_master_x_data%atomic_block_offset, &
+                                    shm_pmax_atom, &
+                                    full_density_alpha, full_density_beta, &
+                                    natom, kind_of, shm_master_x_data%basis_parameter, &
+                                    nkind, shm_is_assoc_atomic_block)
+            END IF
+         END IF
+         ! ** Now get the density(ispin)
+         DO img = 1, nkimages
+            CALL get_full_density(para_env, &
+                                  full_density_alpha(:, img), &
+                                  rho_ao(ispin, img)%matrix, &
+                                  shm_number_of_p_entries, &
+                                  shm_master_x_data%block_offset, &
+                                  kind_of, &
+                                  shm_master_x_data%basis_parameter, &
+                                  get_max_vals_spin=.FALSE., &
+                                  antisymmetric=is_anti_symmetric)
+         END DO
+      END IF
+
+      NULLIFY (full_ks_alpha, full_ks_beta)
+      ALLOCATE (shm_master_x_data%full_ks_alpha(shm_block_offset(ncpu + 1), nkimages))
+      full_ks_alpha => shm_master_x_data%full_ks_alpha
+      full_ks_alpha = 0.0_dp
+
+      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) THEN
+         ALLOCATE (shm_master_x_data%full_ks_beta(shm_block_offset(ncpu + 1), nkimages))
+         full_ks_beta => shm_master_x_data%full_ks_beta
+         full_ks_beta = 0.0_dp
+      END IF
 
 !$OMP PARALLEL DEFAULT(NONE) SHARED(qs_env,&
 !$OMP                                  x_data,&
@@ -422,6 +569,8 @@ CONTAINS
 !$OMP                                  treat_lsd_in_core,&
 !$OMP                                  fac,&
 !$OMP                                  is_anti_symmetric,&
+!$OMP                                  do_disk_storage,&
+!$OMP                                  do_dynamic_load_balancing,&
 !$OMP                                  shm_atomic_block_offset,&
 !$OMP                                  shm_set_offset,&
 !$OMP                                  shm_block_offset,&
@@ -443,10 +592,10 @@ CONTAINS
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
 !$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,max_contraction,&
 !$OMP         max_pgf,jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
-!$OMP         pgf_product_list,subtr_size_mb,use_disk_storage,counter,do_disk_storage,&
+!$OMP         pgf_product_list,subtr_size_mb,use_disk_storage,counter,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,&
 !$OMP         eps_storage,buffer_overflow,logger,private_lib,handle_getp,&
-!$OMP         handle_load,do_dynamic_load_balancing,my_bin_size,maxval_container,integral_containers,maxval_cache,&
+!$OMP         handle_load,my_bin_size,maxval_container,integral_containers,maxval_cache,&
 !$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,coeffs_kind_max0,set_list_ij,&
 !$OMP         set_list_kl,iatom_start,iatom_end,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
 !$OMP         my_thread_id,my_bin_id,handle_bin,bintime_start,my_istart,my_current_counter,latom_block,tmp_block,&
@@ -574,42 +723,6 @@ CONTAINS
          ALLOCATE (pgf_list_kl(i)%image_list(nneighbors))
       END DO
 
-!$OMP BARRIER
-!$OMP MASTER
-      !! Calculate helper array that stores if a certain atomic pair is associated in the KS matrix
-      !! Can we assume that all matrices ks_matrix(i,j) have the same occupation pattern?
-      IF (my_geo_change) THEN
-         CALL get_atomic_block_maps(ks_matrix(1, 1)%matrix, basis_parameter, kind_of, &
-                                    shm_master_x_data%is_assoc_atomic_block, &
-                                    shm_master_x_data%number_of_p_entries, &
-                                    para_env, &
-                                    shm_master_x_data%atomic_block_offset, &
-                                    shm_master_x_data%set_offset, &
-                                    shm_master_x_data%block_offset, &
-                                    shm_master_x_data%map_atoms_to_cpus, &
-                                    nkind)
-
-         shm_is_assoc_atomic_block => shm_master_x_data%is_assoc_atomic_block
-
-         !! Get occupation of KS-matrix
-         IF (ANY(shm_is_assoc_atomic_block(1:natom, 1:natom) == 0)) THEN
-            CALL cp_warn(__LOCATION__, &
-                         "The Kohn Sham matrix is not 100% occupied. This "// &
-                         "may result in incorrect Hartree-Fock results. Try to decrease EPS_PGF_ORB "// &
-                         "and EPS_FILTER_MATRIX in the QS section. For more information "// &
-                         "see FAQ: https://www.cp2k.org/faq:hfx_eps_warning")
-         END IF
-      END IF
-
-      ! ** Set pointers which should be defined now
-      shm_number_of_p_entries = shm_master_x_data%number_of_p_entries
-      shm_is_assoc_atomic_block => shm_master_x_data%is_assoc_atomic_block
-      shm_atomic_block_offset => shm_master_x_data%atomic_block_offset
-      shm_set_offset => shm_master_x_data%set_offset
-      shm_block_offset => shm_master_x_data%block_offset
-!$OMP END MASTER
-!$OMP BARRIER
-
       ! ** Reset storage counter given by MAX_MEMORY by subtracting all buffers
       ! ** Fock and density Matrices (shared)
       subtr_size_mb = 2_int_8*shm_block_offset(ncpu + 1)
@@ -653,7 +766,6 @@ CONTAINS
 
       use_disk_storage = .FALSE.
       counter = 0_int_8
-      do_disk_storage = memory_parameter%do_disk_storage
       IF (do_disk_storage) THEN
          maxval_container_disk => actual_x_data%store_ints%maxval_container_disk
          maxval_cache_disk => actual_x_data%store_ints%maxval_cache_disk
@@ -685,102 +797,11 @@ CONTAINS
 
       private_lib = actual_x_data%lib
 
-!$OMP BARRIER
-!$OMP MASTER
-      !! Let master thread get the density (avoid problems with MPI)
-      !! Get the full density from all the processors
-      NULLIFY (full_density_alpha, full_density_beta)
-      ALLOCATE (full_density_alpha(shm_block_offset(ncpu + 1), nkimages))
-      IF (.NOT. treat_lsd_in_core .OR. .NOT. is_unrestricted) THEN
-         CALL timeset(routineN//"_getP", handle_getP)
-         DO img = 1, nkimages
-            CALL get_full_density(para_env, full_density_alpha(:, img), rho_ao(ispin, img)%matrix, shm_number_of_p_entries, &
-                                  shm_master_x_data%block_offset, &
-                                  kind_of, basis_parameter, get_max_vals_spin=.FALSE., antisymmetric=is_anti_symmetric)
-         END DO
-
-         IF (is_unrestricted) THEN
-            ALLOCATE (full_density_beta(shm_block_offset(ncpu + 1), nkimages))
-            DO img = 1, nkimages
-               CALL get_full_density(para_env, full_density_beta(:, img), rho_ao(2, img)%matrix, shm_number_of_p_entries, &
-                                     shm_master_x_data%block_offset, &
-                                     kind_of, basis_parameter, get_max_vals_spin=.FALSE., antisymmetric=is_anti_symmetric)
-            END DO
-         END IF
-         CALL timestop(handle_getP)
-
-         !! Calculate the max values of the density matrix actual_pmax stores the data from the actual density matrix
-         !! and x_data%initial_p stores the same for the initial guess. The initial guess is updated only in the case of
-         !! a changed geometry
-         NULLIFY (shm_initial_p)
-         IF (do_p_screening) THEN
-            shm_initial_p => shm_master_x_data%initial_p
-            shm_pmax_atom => shm_master_x_data%pmax_atom
-            IF (my_geo_change) THEN
-               CALL update_pmax_mat(shm_master_x_data%initial_p, &
-                                    shm_master_x_data%map_atom_to_kind_atom, &
-                                    shm_master_x_data%set_offset, &
-                                    shm_master_x_data%atomic_block_offset, &
-                                    shm_pmax_atom, &
-                                    full_density_alpha, full_density_beta, &
-                                    natom, kind_of, basis_parameter, &
-                                    nkind, shm_master_x_data%is_assoc_atomic_block)
-            END IF
-         END IF
-      ELSE
-         IF (do_p_screening) THEN
-            CALL timeset(routineN//"_getP", handle_getP)
-            DO img = 1, nkimages
-               CALL get_full_density(para_env, full_density_alpha(:, img), rho_ao(1, img)%matrix, shm_number_of_p_entries, &
-                                     shm_master_x_data%block_offset, &
-                                     kind_of, basis_parameter, get_max_vals_spin=.TRUE., &
-                                     rho_beta=rho_ao(2, img)%matrix, antisymmetric=is_anti_symmetric)
-            END DO
-            CALL timestop(handle_getP)
-
-            !! Calculate the max values of the density matrix actual_pmax stores the data from the actual density matrix
-            !! and x_data%initial_p stores the same for the initial guess. The initial guess is updated only in the case of
-            !! a changed geometry
-            NULLIFY (shm_initial_p)
-            shm_initial_p => actual_x_data%initial_p
-            shm_pmax_atom => shm_master_x_data%pmax_atom
-            IF (my_geo_change) THEN
-               CALL update_pmax_mat(shm_master_x_data%initial_p, &
-                                    shm_master_x_data%map_atom_to_kind_atom, &
-                                    shm_master_x_data%set_offset, &
-                                    shm_master_x_data%atomic_block_offset, &
-                                    shm_pmax_atom, &
-                                    full_density_alpha, full_density_beta, &
-                                    natom, kind_of, basis_parameter, &
-                                    nkind, shm_master_x_data%is_assoc_atomic_block)
-            END IF
-         END IF
-         ! ** Now get the density(ispin)
-         DO img = 1, nkimages
-            CALL get_full_density(para_env, full_density_alpha(:, img), rho_ao(ispin, img)%matrix, shm_number_of_p_entries, &
-                                  shm_master_x_data%block_offset, &
-                                  kind_of, basis_parameter, get_max_vals_spin=.FALSE., &
-                                  antisymmetric=is_anti_symmetric)
-         END DO
-      END IF
-
-      NULLIFY (full_ks_alpha, full_ks_beta)
-      ALLOCATE (shm_master_x_data%full_ks_alpha(shm_block_offset(ncpu + 1), nkimages))
-      full_ks_alpha => shm_master_x_data%full_ks_alpha
-      full_ks_alpha = 0.0_dp
-
-      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) THEN
-         ALLOCATE (shm_master_x_data%full_ks_beta(shm_block_offset(ncpu + 1), nkimages))
-         full_ks_beta => shm_master_x_data%full_ks_beta
-         full_ks_beta = 0.0_dp
-      END IF
-
       !! Initialize schwarz screening matrices for near field estimates and boxing screening matrices
       !! for far field estimates. The update is only performed if the geomtry of the system changed.
       !! If the system is periodic, then the corresponding routines are called and some variables
       !! are initialized
 
-!$OMP END MASTER
 !$OMP BARRIER
 
       IF (.NOT. shm_master_x_data%screen_funct_is_initialized) THEN
@@ -875,15 +896,12 @@ CONTAINS
       !! lstart only the first time the loop is executed. All subsequent loops have to start with one or
       !! iatom and katom respectively. Therefore, we use flags like first_j_loop etc.
 
-      do_dynamic_load_balancing = .TRUE.
-
-      IF (n_threads == 1 .OR. do_disk_storage) do_dynamic_load_balancing = .FALSE.
-
       IF (do_dynamic_load_balancing) THEN
          my_bin_size = SIZE(actual_x_data%distribution_energy)
       ELSE
          my_bin_size = 1
       END IF
+
       !! We do not need the containers if MAX_MEM = 0
       IF (.NOT. memory_parameter%do_all_on_the_fly) THEN
          !! IF new md step -> reinitialize containers
@@ -899,10 +917,8 @@ CONTAINS
                   CALL hfx_init_container(integral_containers(i), memory_parameter%actual_memory_usage, .FALSE.)
                END DO
             END DO
-         END IF
-
-         !! Decompress the first cache for maxvals and integrals
-         IF (.NOT. my_geo_change) THEN
+         ELSE
+            !! Decompress the first cache for maxvals and integrals
             DO bin = 1, my_bin_size
                maxval_cache => actual_x_data%store_ints%maxval_cache(bin)
                maxval_container => actual_x_data%store_ints%maxval_container(bin)
@@ -2070,15 +2086,15 @@ CONTAINS
 !$OMP END CRITICAL(hfxenergy_out_critical)
 
 !$OMP MASTER
-      DEALLOCATE (full_density_alpha)
-
-      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) &
-         DEALLOCATE (full_density_beta)
-
       IF (do_dynamic_load_balancing) &
          DEALLOCATE (shm_master_x_data%task_list)
 !$OMP END MASTER
 !$OMP END PARALLEL
+
+      DEALLOCATE (full_density_alpha)
+
+      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) &
+         DEALLOCATE (full_density_beta)
 
       DEALLOCATE (kind_of)
 

@@ -527,8 +527,8 @@ CONTAINS
       natom = SIZE(is_assoc_atomic_block, 1)
       ALLOCATE (map_atoms_to_cpus(para_env%num_pe))
       ALLOCATE (counter(para_env%num_pe))
-      counter = 0
 
+      counter = 0
       DO iatom = 1, natom
          DO jatom = iatom, natom
             icpu = is_assoc_atomic_block(jatom, iatom)
@@ -539,6 +539,7 @@ CONTAINS
          ALLOCATE (map_atoms_to_cpus(icpu)%iatom_list(counter(icpu)))
          ALLOCATE (map_atoms_to_cpus(icpu)%jatom_list(counter(icpu)))
       END DO
+
       counter = 0
       DO iatom = 1, natom
          DO jatom = iatom, natom
