@@ -532,11 +532,6 @@ CONTAINS
          ENDDO
       ENDDO
 
-      ! only the MASTER thread will print, but it shouldn't hurt to get the logger pointer here already
-      logger => cp_get_default_logger()
-      do_print_load_balance_info = BTEST(cp_print_key_should_output(logger%iter_info, hfx_section, &
-                                                                    "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO"), cp_p_file)
-
       ! Reset storage counter given by MAX_MEMORY by subtracting all buffers
       ! Fock and density Matrices (shared)
       subtr_size_mb = 2_int_8*shm_block_offset(ncpu + 1)
@@ -634,9 +629,7 @@ CONTAINS
 !$OMP                                  shm_pmax_atom,&
 !$OMP                                  shm_pmax_block,&
 !$OMP                                  shm_atomic_pair_list,&
-!$OMP                                  do_print_load_balance_info,&
-!$OMP                                  subtr_size_mb,&
-!$OMP                                  logger) &
+!$OMP                                  subtr_size_mb) &
 !$OMP PRIVATE(i_thread,actual_x_data,potential_parameter,&
 !$OMP         general_parameter,load_balance_parameter,memory_parameter,cache_size,bits_max_val,&
 !$OMP         basis_parameter,neris_tmp,max_val_memory,ikind,&
@@ -1663,23 +1656,6 @@ CONTAINS
 !$OMP END MASTER
       END DO !bin
 
-!$OMP BARRIER
-      IF (do_print_load_balance_info) THEN
-         iw = -1
-!$OMP MASTER
-         iw = cp_print_key_unit_nr(logger, hfx_section, "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO", &
-                                   extension=".scfLog")
-!$OMP END MASTER
-
-         CALL collect_load_balance_info(para_env, actual_x_data, iw, n_threads, i_thread, &
-                                        hfx_do_eval_energy)
-
-!$OMP MASTER
-         CALL cp_print_key_finished_output(iw, logger, hfx_section, &
-                                           "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO")
-!$OMP END MASTER
-      END IF
-
       ! sample the memory prior to deallocation (OMP-max-reduced)
       CALL m_memory(memsize_after)
 
@@ -1772,12 +1748,10 @@ CONTAINS
          END DO
 !$OMP END CRITICAL(hfxenergy_out_critical)
       END IF
+!$OMP END PARALLEL
 
-!$OMP MASTER
       IF (do_dynamic_load_balancing) &
          DEALLOCATE (shm_master_x_data%task_list)
-!$OMP END MASTER
-!$OMP END PARALLEL
 
       !! Calculate the exchange energies from the Kohn-Sham matrix. Before we can go on, we have to symmetrize.
 
@@ -1926,6 +1900,20 @@ CONTAINS
 
       ! the following is used in derivatives_four_center, replicate over all x_data
       x_data(irep, :)%memory_parameter%final_comp_counter_energy = shm_mem_compression_counter
+
+      ! only the MASTER thread will print, but it shouldn't hurt to get the logger pointer here already
+      logger => cp_get_default_logger()
+
+      do_print_load_balance_info = BTEST(cp_print_key_should_output(logger%iter_info, hfx_section, &
+                                                                    "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO"), cp_p_file)
+      IF (do_print_load_balance_info) THEN
+         iw = cp_print_key_unit_nr(logger, hfx_section, "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO", &
+                                   extension=".scfLog")
+
+         CALL collect_load_balance_info(para_env, x_data(irep, :), iw, n_threads, hfx_do_eval_energy)
+
+         CALL cp_print_key_finished_output(iw, logger, hfx_section, "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO")
+      END IF
 
       ! Print some memeory information if this was the first step
       IF (my_geo_change) THEN
