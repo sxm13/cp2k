@@ -168,15 +168,12 @@ CONTAINS
          sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, sphi_b_u3, sphi_c_u1, sphi_c_u2, &
          sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, tmp_i4, unit_id
       INTEGER(int_8) :: atom_block, counter, estimate_to_store_int, max_val_memory, &
-         mb_size_buffers, mb_size_f, mb_size_p, mem_compression_counter, &
-         mem_compression_counter_disk, mem_eris, mem_eris_disk, mem_max_val, memsize_after, &
-         memsize_before, my_current_counter, my_istart, n_processes, nblocks, ncpu, neris_disk, &
-         neris_incore, neris_onthefly, neris_tmp, neris_total, nprim_ints, &
-         shm_mem_compression_counter, shm_neris_disk, shm_neris_incore, shm_neris_onthefly, &
-         shm_neris_total, shm_nprim_ints, shm_stor_count_int_disk, shm_stor_count_max_val, &
-         shm_storage_counter_integrals, stor_count_int_disk
-      INTEGER(int_8) :: stor_count_max_val, storage_counter_integrals, subtr_size_mb, tmp_block, &
-         tmp_i8(8)
+         mb_size_buffers, mb_size_p, mem_compression_counter, mem_compression_counter_disk, &
+         mem_eris, mem_eris_disk, mem_max_val, memsize_after, memsize_before, my_current_counter, &
+         my_istart, n_processes, nblocks, ncpu, neris_tmp, shm_mem_compression_counter, &
+         shm_neris_disk, shm_neris_incore, shm_neris_onthefly, shm_neris_total, shm_nprim_ints, &
+         shm_stor_count_int_disk, shm_stor_count_max_val, shm_stor_counter_integrals, &
+         subtr_size_mb, tmp_block, tmp_i8(8)
       INTEGER(int_8), ALLOCATABLE, DIMENSION(:)          :: tmp_task_list_cost
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, tmp_index
       INTEGER, DIMENSION(:), POINTER :: la_max, la_min, lb_max, lb_min, lc_max, lc_min, ld_max, &
@@ -268,7 +265,7 @@ CONTAINS
                                    extension=".scfLog")
          IF (iw > 0) THEN
             WRITE (UNIT=iw, FMT="(/,(T3,A,T60,I21))") &
-               "HFX_MEM_INFO| Est. max. program size before HFX [MiB]:", memsize_before/(1024*1024)
+               "HFX_MEM_INFO| Est. max. program size before HFX [MiB]:", memsize_before/1024**2
             CALL m_flush(iw)
          END IF
          CALL cp_print_key_finished_output(iw, logger, hfx_section, &
@@ -319,11 +316,12 @@ CONTAINS
       shm_neris_total = 0
       shm_nprim_ints = 0
       shm_neris_onthefly = 0
-      shm_storage_counter_integrals = 0
+      shm_stor_counter_integrals = 0
       shm_stor_count_int_disk = 0
       shm_neris_incore = 0
       shm_neris_disk = 0
       shm_stor_count_max_val = 0
+      shm_mem_compression_counter = 0
 
       is_unrestricted = dft_control%nspins == 2
 
@@ -534,6 +532,45 @@ CONTAINS
          ENDDO
       ENDDO
 
+      ! only the MASTER thread will print, but it shouldn't hurt to get the logger pointer here already
+      logger => cp_get_default_logger()
+      do_print_load_balance_info = BTEST(cp_print_key_should_output(logger%iter_info, hfx_section, &
+                                                                    "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO"), cp_p_file)
+
+      ! Reset storage counter given by MAX_MEMORY by subtracting all buffers
+      ! Fock and density Matrices (shared)
+      subtr_size_mb = 2_int_8*shm_block_offset(ncpu + 1)
+
+      ! if non restricted ==> alpha/beta spin
+      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) &
+         subtr_size_mb = subtr_size_mb*2_int_8
+
+      subtr_size_mb = subtr_size_mb &
+                      + nsgf_max**4*n_threads & ! primitive buffer (not shared by the threads)
+                      + 8_int_8*nsgf_max**2*n_threads & ! density + fock buffers
+                      + max_pgf**2*max_set**2*nkind**2 & ! screening functions (shared): coeffs_pgf
+                      + max_set**2*nkind**2 & ! ...: coeffs_set
+                      + nkind**2 & ! ...: coeffs_kind
+                      + max_pgf**2*max_set**2*nkind**2 & ! ...: radii_pgf
+                      + natom**2 ! is_assoc (shared)
+
+      ! pmax_atom (shared)
+      IF (do_p_screening) &
+         subtr_size_mb = subtr_size_mb + natom**2
+
+      ! Initial P only MAX(alpha,beta), shared, size_p_screen only /= 0 on i_thread==1
+      IF (do_p_screening .OR. do_p_screening_forces) &
+         subtr_size_mb = subtr_size_mb + shm_master_x_data%memory_parameter%size_p_screen
+
+      ! In core forces require their own initial P
+      IF (do_p_screening_forces .AND. shm_master_x_data%memory_parameter%treat_forces_in_core) &
+         subtr_size_mb = subtr_size_mb &
+                         + shm_master_x_data%memory_parameter%size_p_screen &
+                         + natom**2 ! ???
+
+      ! Convert into MiB's
+      subtr_size_mb = subtr_size_mb*8_int_8/1024_int_8**2
+
 !$OMP PARALLEL DEFAULT(NONE) SHARED(qs_env,&
 !$OMP                                  x_data,&
 !$OMP                                  ks_matrix,&
@@ -559,14 +596,6 @@ CONTAINS
 !$OMP                                  shm_initial_p,&
 !$OMP                                  shm_is_assoc_atomic_block,&
 !$OMP                                  shm_number_of_p_entries,&
-!$OMP                                  shm_neris_total,&
-!$OMP                                  shm_neris_onthefly,&
-!$OMP                                  shm_storage_counter_integrals,&
-!$OMP                                  shm_stor_count_int_disk,&
-!$OMP                                  shm_neris_incore,&
-!$OMP                                  shm_neris_disk,&
-!$OMP                                  shm_nprim_ints,&
-!$OMP                                  shm_stor_count_max_val,&
 !$OMP                                  cell,&
 !$OMP                                  screen_coeffs_set,&
 !$OMP                                  screen_coeffs_kind,&
@@ -605,19 +634,19 @@ CONTAINS
 !$OMP                                  shm_pmax_atom,&
 !$OMP                                  shm_pmax_block,&
 !$OMP                                  shm_atomic_pair_list,&
-!$OMP                                  shm_mem_compression_counter,&
-!$OMP                                  do_print_load_balance_info) &
+!$OMP                                  do_print_load_balance_info,&
+!$OMP                                  subtr_size_mb,&
+!$OMP                                  memsize_after,&
+!$OMP                                  logger) &
 !$OMP PRIVATE(i_thread,actual_x_data,potential_parameter,&
 !$OMP         general_parameter,load_balance_parameter,memory_parameter,cache_size,bits_max_val,&
-!$OMP         basis_parameter,neris_total,neris_incore,&
-!$OMP         neris_disk,neris_onthefly,mem_eris,mem_eris_disk,mem_max_val,compression_factor,&
-!$OMP         compression_factor_disk,nprim_ints,neris_tmp,max_val_memory,ikind,&
+!$OMP         basis_parameter,neris_tmp,max_val_memory,ikind,&
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
 !$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,max_contraction,&
 !$OMP         jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
-!$OMP         pgf_product_list,subtr_size_mb,use_disk_storage,counter,&
+!$OMP         pgf_product_list,use_disk_storage,counter,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,&
-!$OMP         eps_storage,buffer_overflow,logger,private_lib,handle_getp,&
+!$OMP         eps_storage,buffer_overflow,private_lib,handle_getp,&
 !$OMP         handle_load,my_bin_size,maxval_container,integral_containers,maxval_cache,&
 !$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,coeffs_kind_max0,set_list_ij,&
 !$OMP         set_list_kl,iatom_start,iatom_end,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
@@ -632,10 +661,14 @@ CONTAINS
 !$OMP         mem_compression_counter_disk,max_val1,sphi_a_ext_set,sphi_b_ext_set,kset,lset,max_val2_set,max_val2,&
 !$OMP         sphi_c_ext_set,sphi_d_ext_set,pmax_entry,log10_pmax,current_counter,nints,estimate_to_store_int,&
 !$OMP         spherical_estimate,nbits,buffer_left,buffer_start,buffer_size,max_contraction_val,tmp_r_1,tmp_r_2,&
-!$OMP         tmp_screen_pgf1,tmp_screen_pgf2,cartesian_estimate,bintime_stop,iw,memsize_after,storage_counter_integrals,&
-!$OMP         stor_count_int_disk,stor_count_max_val,ene_x_aa,ene_x_bb,mb_size_p,mb_size_f,mb_size_buffers,afac,ene_x_aa_diag,&
-!$OMP         ene_x_bb_diag,act_atomic_block_offset,act_set_offset,j,handle_dist_ks,tmp_i8,tmp_i4,&
-!$OMP         etmp,img,bin,eps_scaling_str,eps_schwarz_min_str)
+!$OMP         tmp_screen_pgf1,tmp_screen_pgf2,cartesian_estimate,bintime_stop,iw,&
+!$OMP         ene_x_aa,ene_x_bb,afac,ene_x_aa_diag,&
+!$OMP         ene_x_bb_diag,act_atomic_block_offset,act_set_offset,j,handle_dist_ks,tmp_i4,&
+!$OMP         etmp,img,bin,eps_scaling_str,eps_schwarz_min_str) &
+!$OMP REDUCTION(+: shm_neris_total,shm_neris_onthefly,shm_neris_incore,shm_neris_disk,&
+!$OMP              shm_nprim_ints,shm_stor_counter_integrals,shm_stor_count_int_disk,&
+!$OMP              shm_stor_count_max_val,shm_mem_compression_counter) &
+!$OMP REDUCTION(MAX: memsize_after)
 
       i_thread = 0
 !$    i_thread = omp_get_thread_num()
@@ -654,24 +687,12 @@ CONTAINS
       general_parameter = actual_x_data%general_parameter
       load_balance_parameter => actual_x_data%load_balance_parameter
       memory_parameter => actual_x_data%memory_parameter
+      basis_parameter => actual_x_data%basis_parameter
 
       cache_size = memory_parameter%cache_size
       bits_max_val = memory_parameter%bits_max_val
 
-      basis_parameter => actual_x_data%basis_parameter
-
       !! initialize some counters
-      neris_total = 0_int_8
-      neris_incore = 0_int_8
-      neris_disk = 0_int_8
-      neris_onthefly = 0_int_8
-      mem_eris = 0_int_8
-      mem_eris_disk = 0_int_8
-      mem_max_val = 0_int_8
-      compression_factor = 0.0_dp
-      compression_factor_disk = 0.0_dp
-      nprim_ints = 0_int_8
-      neris_tmp = 0_int_8
       max_val_memory = 1_int_8
 
       !! Allocate the arrays for the integrals.
@@ -726,40 +747,6 @@ CONTAINS
          ALLOCATE (pgf_list_kl(i)%image_list(nneighbors))
       END DO
 
-      ! ** Reset storage counter given by MAX_MEMORY by subtracting all buffers
-      ! ** Fock and density Matrices (shared)
-      subtr_size_mb = 2_int_8*shm_block_offset(ncpu + 1)
-
-      ! ** if non restricted ==> alpha/beta spin
-      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) &
-         subtr_size_mb = subtr_size_mb*2_int_8
-
-      ! ** Initial P only MAX(alpha,beta) (shared)
-      IF (do_p_screening .OR. do_p_screening_forces) &
-         subtr_size_mb = subtr_size_mb + memory_parameter%size_p_screen
-
-      ! ** In core forces require their own initial P
-      IF (do_p_screening_forces .AND. memory_parameter%treat_forces_in_core) &
-         subtr_size_mb = subtr_size_mb &
-                         + memory_parameter%size_p_screen &
-                         + natom**2 ! ???
-
-      subtr_size_mb = subtr_size_mb &
-                      + nsgf_max**4*n_threads & ! primitive buffer (not shared by the threads)
-                      + 8_int_8*nsgf_max**2*n_threads & ! density + fock buffers
-                      + max_pgf**2*max_set**2*nkind**2 & ! screening functions (shared): coeffs_pgf
-                      + max_set**2*nkind**2 & ! ...: coeffs_set
-                      + nkind**2 & ! ...: coeffs_kind
-                      + max_pgf**2*max_set**2*nkind**2 & ! ...: radii_pgf
-                      + natom**2 ! is_assoc (shared)
-
-      ! ** pmax_atom (shared)
-      IF (do_p_screening) &
-         subtr_size_mb = subtr_size_mb + natom**2
-
-      ! ** Convert into MiB's
-      subtr_size_mb = subtr_size_mb*8_int_8/1024_int_8**2
-
       ! ** Subtracting all these buffers from MAX_MEMORY yields the amount
       ! ** of RAM that is left for the compressed integrals. When using threads
       ! ** all the available memory is shared among all n_threads. i.e. the faster
@@ -795,8 +782,6 @@ CONTAINS
       !! Variable determining whether a required integral needs to be calculated
       !! due to cache-miss. Treat on-the-fly as constant cache-miss.
       buffer_overflow = memory_parameter%do_all_on_the_fly
-
-      logger => cp_get_default_logger()
 
       private_lib = actual_x_data%lib
 
@@ -1431,7 +1416,7 @@ CONTAINS
                         !! store current number of integrals, update total number and number of integrals in buffer
                         current_counter = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
                         IF (buffer_overflow) THEN
-                           neris_onthefly = neris_onthefly + current_counter
+                           shm_neris_onthefly = shm_neris_onthefly + current_counter
                         END IF
 
                         !! Calculate integrals if we run out of buffer or the geometry did change
@@ -1473,8 +1458,8 @@ CONTAINS
                                          do_periodic)
 
                            nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
-                           neris_total = neris_total + nints
-                           nprim_ints = nprim_ints + neris_tmp
+                           shm_neris_total = shm_neris_total + nints
+                           shm_nprim_ints = shm_nprim_ints + neris_tmp
 
                            !! Compress the array for storage
                            spherical_estimate = TINY(spherical_estimate)
@@ -1532,11 +1517,9 @@ CONTAINS
                               buffer_left = nints
                               buffer_start = 1
                               IF (.NOT. use_disk_storage) THEN
-                                 neris_incore = neris_incore + INT(nints, int_8)
-!                                 neris_incore = neris_incore+nints
+                                 shm_neris_incore = shm_neris_incore + INT(nints, int_8)
                               ELSE
-                                 neris_disk = neris_disk + INT(nints, int_8)
-!                                 neris_disk = neris_disk+nints
+                                 shm_neris_disk = shm_neris_disk + INT(nints, int_8)
                               END IF
                               DO WHILE (buffer_left > 0)
                                  buffer_size = MIN(buffer_left, CACHE_SIZE)
@@ -1591,9 +1574,9 @@ CONTAINS
                            buffer_left = nints
                            buffer_start = 1
                            IF (.NOT. use_disk_storage) THEN
-                              neris_incore = neris_incore + INT(nints, int_8)
+                              shm_neris_incore = shm_neris_incore + INT(nints, int_8)
                            ELSE
-                              neris_disk = neris_disk + INT(nints, int_8)
+                              shm_neris_disk = shm_neris_disk + INT(nints, int_8)
                            END IF
                            DO WHILE (buffer_left > 0)
                               buffer_size = MIN(buffer_left, cache_size)
@@ -1683,12 +1666,6 @@ CONTAINS
 !$OMP END MASTER
       END DO !bin
 
-!$OMP MASTER
-      logger => cp_get_default_logger()
-      do_print_load_balance_info = .FALSE.
-      do_print_load_balance_info = BTEST(cp_print_key_should_output(logger%iter_info, hfx_section, &
-                                                                    "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO"), cp_p_file)
-!$OMP END MASTER
 !$OMP BARRIER
       IF (do_print_load_balance_info) THEN
          iw = -1
@@ -1730,93 +1707,22 @@ CONTAINS
 
       DEALLOCATE (ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp)
 
-!$OMP BARRIER
-      !! Get some number about ERIS
-!$OMP ATOMIC
-      shm_neris_total = shm_neris_total + neris_total
-!$OMP ATOMIC
-      shm_neris_onthefly = shm_neris_onthefly + neris_onthefly
-!$OMP ATOMIC
-      shm_nprim_ints = shm_nprim_ints + nprim_ints
+      ! Get some number about ERIS and memory compression, all of them are OMP-reduced(sum)
+      ! Note: memory_parameter&actual_memory_usage is later on modified by caching-related
+      !       procedures, do not move out/further down
+      shm_stor_counter_integrals = INT(memory_parameter%actual_memory_usage, KIND=int_8) &
+                                   *memory_parameter%cache_size
+      shm_stor_count_int_disk = INT(memory_parameter%actual_memory_usage_disk, KIND=int_8) &
+                                *memory_parameter%cache_size
+      shm_stor_count_max_val = max_val_memory*memory_parameter%cache_size
 
-      storage_counter_integrals = INT(memory_parameter%actual_memory_usage, KIND=int_8) &
-                                  *memory_parameter%cache_size
-      stor_count_int_disk = INT(memory_parameter%actual_memory_usage_disk, KIND=int_8) &
-                            *memory_parameter%cache_size
-      stor_count_max_val = max_val_memory*memory_parameter%cache_size
-!$OMP ATOMIC
-      shm_storage_counter_integrals = shm_storage_counter_integrals + storage_counter_integrals
-!$OMP ATOMIC
-      shm_stor_count_int_disk = shm_stor_count_int_disk + stor_count_int_disk
-!$OMP ATOMIC
-      shm_neris_incore = shm_neris_incore + neris_incore
-!$OMP ATOMIC
-      shm_neris_disk = shm_neris_disk + neris_disk
-!$OMP ATOMIC
-      shm_stor_count_max_val = shm_stor_count_max_val + stor_count_max_val
-!$OMP BARRIER
-
-      ! ** Calculate how much memory has already been used (might be needed for in-core forces
-!$OMP MASTER
-      shm_mem_compression_counter = 0
-      DO i = 1, n_threads
-!$OMP       ATOMIC READ
-         tmp_i4 = x_data(irep, i)%memory_parameter%actual_memory_usage
-         shm_mem_compression_counter = shm_mem_compression_counter + &
-                                       tmp_i4*memory_parameter%cache_size
-      END DO
-!$OMP END MASTER
-!$OMP BARRIER
-      actual_x_data%memory_parameter%final_comp_counter_energy = shm_mem_compression_counter
+      ! Calculate how much memory has already been used (needed for in-core forces)
+      shm_mem_compression_counter = memory_parameter%actual_memory_usage*memory_parameter%cache_size
 
 !$OMP MASTER
       !! Calculate the exchange energies from the Kohn-Sham matrix. Before we can go on, we have to symmetrize.
       ene_x_aa = 0.0_dp
       ene_x_bb = 0.0_dp
-
-      mb_size_p = shm_block_offset(ncpu + 1)/1024/128
-      mb_size_f = shm_block_offset(ncpu + 1)/1024/128
-      IF (.NOT. treat_lsd_in_core) THEN
-         IF (is_unrestricted) THEN
-            mb_size_f = mb_size_f*2
-            mb_size_p = mb_size_p*2
-         END IF
-      END IF
-      !! size of primitive_integrals(not shared)
-      mb_size_buffers = INT(nsgf_max, int_8)**4*n_threads
-      !! fock density buffers (not shared)
-      mb_size_buffers = mb_size_buffers + INT(nsgf_max, int_8)**2*n_threads
-      subtr_size_mb = subtr_size_mb + 8_int_8*nsgf_max**2*n_threads
-      !! size of screening functions (shared)
-      mb_size_buffers = mb_size_buffers &
-                        + max_pgf**2*max_set**2*nkind**2 &
-                        + max_set**2*nkind**2 &
-                        + nkind**2 &
-                        + max_pgf**2*max_set**2*nkind**2
-      !! is_assoc (shared)
-      mb_size_buffers = mb_size_buffers + natom**2
-      ! ** pmax_atom (shared)
-      IF (do_p_screening) THEN
-         mb_size_buffers = mb_size_buffers + natom**2
-      END IF
-      IF (do_p_screening_forces) THEN
-         IF (memory_parameter%treat_forces_in_core) THEN
-            mb_size_buffers = mb_size_buffers + natom**2
-         END IF
-      END IF
-      ! ** Initial P only MAX(alpha,beta) (shared)
-      IF (do_p_screening .OR. do_p_screening_forces) THEN
-         mb_size_buffers = mb_size_buffers + memory_parameter%size_p_screen
-      END IF
-      ! ** In core forces require their own initial P
-      IF (do_p_screening_forces) THEN
-         IF (memory_parameter%treat_forces_in_core) THEN
-            mb_size_buffers = mb_size_buffers + memory_parameter%size_p_screen
-         END IF
-      END IF
-
-      !! mb
-      mb_size_buffers = mb_size_buffers/1024/128
 
       afac = 1.0_dp
       IF (is_anti_symmetric) afac = -1.0_dp
@@ -1945,12 +1851,86 @@ CONTAINS
          ehfx = 0.5_dp*(ene_x_aa + ene_x_bb)
       END IF
 
-      !! Print some memeory information if this is the first step
+!$OMP END MASTER
+
+      ! cache maintenance if not doing everythong on the fly
+      IF (.NOT. memory_parameter%do_all_on_the_fly) THEN
+         IF (do_dynamic_load_balancing) THEN
+            my_bin_size = SIZE(actual_x_data%distribution_energy)
+         ELSE
+            my_bin_size = 1
+         END IF
+
+         DO bin = 1, my_bin_size
+            maxval_cache => actual_x_data%store_ints%maxval_cache(bin)
+            maxval_container => actual_x_data%store_ints%maxval_container(bin)
+            integral_caches => actual_x_data%store_ints%integral_caches(:, bin)
+            integral_containers => actual_x_data%store_ints%integral_containers(:, bin)
+
+            ! flush caches if the geometry changed
+            IF (my_geo_change) THEN
+               CALL hfx_flush_last_cache(bits_max_val, maxval_cache, maxval_container, &
+                                         memory_parameter%actual_memory_usage, .FALSE.)
+               DO i = 1, 64
+                  CALL hfx_flush_last_cache(i, integral_caches(i), integral_containers(i), &
+                                            memory_parameter%actual_memory_usage, .FALSE.)
+               END DO
+            END IF
+
+            ! reset all caches
+            CALL hfx_reset_cache_and_container(maxval_cache, maxval_container, &
+                                               memory_parameter%actual_memory_usage, .FALSE.)
+            DO i = 1, 64
+               CALL hfx_reset_cache_and_container(integral_caches(i), integral_containers(i), &
+                                                  memory_parameter%actual_memory_usage, .FALSE.)
+            END DO
+         END DO
+      END IF
+
+      !! Since the I/O routines are not thread-safe, i.e. the procedure to get the unit number, put a lock here
+      IF (do_disk_storage) THEN
+!$OMP CRITICAL(hfxenergy_out_critical)
+         !! flush caches if the geometry changed
+         IF (my_geo_change) THEN
+            CALL hfx_flush_last_cache(bits_max_val, maxval_cache_disk, maxval_container_disk, &
+                                      memory_parameter%actual_memory_usage_disk, .TRUE.)
+            DO i = 1, 64
+               CALL hfx_flush_last_cache(i, integral_caches_disk(i), integral_containers_disk(i), &
+                                         memory_parameter%actual_memory_usage_disk, .TRUE.)
+            END DO
+         END IF
+         !! reset all caches except we calculate all on the fly
+         CALL hfx_reset_cache_and_container(maxval_cache_disk, maxval_container_disk, &
+                                            memory_parameter%actual_memory_usage_disk, do_disk_storage)
+         DO i = 1, 64
+            CALL hfx_reset_cache_and_container(integral_caches_disk(i), integral_containers_disk(i), &
+                                               memory_parameter%actual_memory_usage_disk, do_disk_storage)
+         END DO
+!$OMP END CRITICAL(hfxenergy_out_critical)
+      END IF
+
+!$OMP MASTER
+      IF (do_dynamic_load_balancing) &
+         DEALLOCATE (shm_master_x_data%task_list)
+!$OMP END MASTER
+!$OMP END PARALLEL
+
+      ! the following is used in derivatives_four_center, replicate over all x_data
+      x_data(irep, :)%memory_parameter%final_comp_counter_energy = shm_mem_compression_counter
+
+      DEALLOCATE (full_density_alpha)
+
+      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) &
+         DEALLOCATE (full_density_beta)
+
+      DEALLOCATE (kind_of)
+
+      ! Print some memeory information if this was the first step
       IF (my_geo_change) THEN
-         tmp_i8(1:8) = (/shm_storage_counter_integrals, shm_neris_onthefly, shm_neris_incore, shm_neris_disk, &
+         tmp_i8(1:8) = (/shm_stor_counter_integrals, shm_neris_onthefly, shm_neris_incore, shm_neris_disk, &
                          shm_neris_total, shm_stor_count_int_disk, shm_nprim_ints, shm_stor_count_max_val/)
          CALL mp_sum(tmp_i8, para_env%group)
-         shm_storage_counter_integrals = tmp_i8(1)
+         shm_stor_counter_integrals = tmp_i8(1)
          shm_neris_onthefly = tmp_i8(2)
          shm_neris_incore = tmp_i8(3)
          shm_neris_disk = tmp_i8(4)
@@ -1959,11 +1939,44 @@ CONTAINS
          shm_nprim_ints = tmp_i8(7)
          shm_stor_count_max_val = tmp_i8(8)
          CALL mp_max(memsize_after, para_env%group)
-         mem_eris = (shm_storage_counter_integrals + 128*1024 - 1)/1024/128
-         compression_factor = REAL(shm_neris_incore, dp)/REAL(shm_storage_counter_integrals, dp)
+         mem_eris = (shm_stor_counter_integrals + 128*1024 - 1)/1024/128
+         compression_factor = REAL(shm_neris_incore, dp)/REAL(shm_stor_counter_integrals, dp)
          mem_eris_disk = (shm_stor_count_int_disk + 128*1024 - 1)/1024/128
          compression_factor_disk = REAL(shm_neris_disk, dp)/REAL(shm_stor_count_int_disk, dp)
          mem_max_val = (shm_stor_count_max_val + 128*1024 - 1)/1024/128
+
+         mb_size_p = shm_block_offset(ncpu + 1)/1024/128
+         IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) THEN
+            mb_size_p = mb_size_p*2
+         END IF
+
+         ! size of primitive_integrals(not shared)
+         mb_size_buffers = INT(nsgf_max, int_8)**4*n_threads &
+                           + INT(nsgf_max, int_8)**2*n_threads ! fock density buffers (not shared)
+
+         ! size of screening functions (shared)
+         mb_size_buffers = mb_size_buffers &
+                           + max_pgf**2*max_set**2*nkind**2 &
+                           + max_set**2*nkind**2 &
+                           + nkind**2 &
+                           + max_pgf**2*max_set**2*nkind**2 &
+                           + natom**2 ! is_assoc (shared)
+
+         ! pmax_atom (shared)
+         IF (do_p_screening) &
+            mb_size_buffers = mb_size_buffers + natom**2
+
+         IF (do_p_screening_forces .AND. shm_master_x_data%memory_parameter%treat_forces_in_core) &
+            mb_size_buffers = mb_size_buffers &
+                              + natom**2 &
+                              + shm_master_x_data%memory_parameter%size_p_screen ! In core forces require their own initial P
+
+         ! ** Initial P only MAX(alpha,beta) (shared)
+         IF (do_p_screening .OR. do_p_screening_forces) &
+            mb_size_buffers = mb_size_buffers + shm_master_x_data%memory_parameter%size_p_screen
+
+         ! mb
+         mb_size_buffers = mb_size_buffers/1024/128
 
          IF (shm_neris_incore == 0) THEN
             mem_eris = 0
@@ -1974,8 +1987,7 @@ CONTAINS
             compression_factor_disk = 0.0_dp
          END IF
 
-         iw = cp_print_key_unit_nr(logger, hfx_section, "HF_INFO", &
-                                   extension=".scfLog")
+         iw = cp_print_key_unit_nr(logger, hfx_section, "HF_INFO", extension=".scfLog")
          IF (iw > 0) THEN
             WRITE (UNIT=iw, FMT="((T3,A,T60,I21))") &
                "HFX_MEM_INFO| Number of cart. primitive ERI's calculated:      ", shm_nprim_ints
@@ -2020,87 +2032,12 @@ CONTAINS
                   "HFX_MEM_INFO| Size of buffers [MiB]:             ", mb_size_buffers
             END IF
             WRITE (UNIT=iw, FMT="((T3,A,T60,I21),/)") &
-               "HFX_MEM_INFO| Est. max. program size after HFX  [MiB]:", memsize_after/(1024*1024)
+               "HFX_MEM_INFO| Est. max. program size after HFX  [MiB]:", memsize_after/1024**2
             CALL m_flush(iw)
          END IF
 
-         CALL cp_print_key_finished_output(iw, logger, hfx_section, &
-                                           "HF_INFO")
+         CALL cp_print_key_finished_output(iw, logger, hfx_section, "HF_INFO")
       END IF
-!$OMP END MASTER
-
-      !! flush caches if the geometry changed
-      IF (do_dynamic_load_balancing) THEN
-         my_bin_size = SIZE(actual_x_data%distribution_energy)
-      ELSE
-         my_bin_size = 1
-      END IF
-
-      IF (my_geo_change .AND. .NOT. memory_parameter%do_all_on_the_fly) THEN
-         DO bin = 1, my_bin_size
-            maxval_cache => actual_x_data%store_ints%maxval_cache(bin)
-            maxval_container => actual_x_data%store_ints%maxval_container(bin)
-            integral_caches => actual_x_data%store_ints%integral_caches(:, bin)
-            integral_containers => actual_x_data%store_ints%integral_containers(:, bin)
-            CALL hfx_flush_last_cache(bits_max_val, maxval_cache, maxval_container, memory_parameter%actual_memory_usage, &
-                                      .FALSE.)
-            DO i = 1, 64
-               CALL hfx_flush_last_cache(i, integral_caches(i), integral_containers(i), &
-                                         memory_parameter%actual_memory_usage, .FALSE.)
-            END DO
-         END DO
-      END IF
-      !! reset all caches except we calculate all on the fly
-      IF (.NOT. memory_parameter%do_all_on_the_fly) THEN
-         DO bin = 1, my_bin_size
-            maxval_cache => actual_x_data%store_ints%maxval_cache(bin)
-            maxval_container => actual_x_data%store_ints%maxval_container(bin)
-            integral_caches => actual_x_data%store_ints%integral_caches(:, bin)
-            integral_containers => actual_x_data%store_ints%integral_containers(:, bin)
-
-            CALL hfx_reset_cache_and_container(maxval_cache, maxval_container, memory_parameter%actual_memory_usage, .FALSE.)
-            DO i = 1, 64
-               CALL hfx_reset_cache_and_container(integral_caches(i), integral_containers(i), &
-                                                  memory_parameter%actual_memory_usage, &
-                                                  .FALSE.)
-            END DO
-         END DO
-      END IF
-
-      !! Since the I/O routines are no thread-safe, i.e. the procedure to get the unit number, put a lock here
-!$OMP CRITICAL(hfxenergy_out_critical)
-      IF (do_disk_storage) THEN
-         !! flush caches if the geometry changed
-         IF (my_geo_change) THEN
-            CALL hfx_flush_last_cache(bits_max_val, maxval_cache_disk, maxval_container_disk, &
-                                      memory_parameter%actual_memory_usage_disk, .TRUE.)
-            DO i = 1, 64
-               CALL hfx_flush_last_cache(i, integral_caches_disk(i), integral_containers_disk(i), &
-                                         memory_parameter%actual_memory_usage_disk, .TRUE.)
-            END DO
-         END IF
-         !! reset all caches except we calculate all on the fly
-         CALL hfx_reset_cache_and_container(maxval_cache_disk, maxval_container_disk, memory_parameter%actual_memory_usage_disk, &
-                                            do_disk_storage)
-         DO i = 1, 64
-            CALL hfx_reset_cache_and_container(integral_caches_disk(i), integral_containers_disk(i), &
-                                               memory_parameter%actual_memory_usage_disk, do_disk_storage)
-         END DO
-      END IF
-!$OMP END CRITICAL(hfxenergy_out_critical)
-
-!$OMP MASTER
-      IF (do_dynamic_load_balancing) &
-         DEALLOCATE (shm_master_x_data%task_list)
-!$OMP END MASTER
-!$OMP END PARALLEL
-
-      DEALLOCATE (full_density_alpha)
-
-      IF (.NOT. treat_lsd_in_core .AND. is_unrestricted) &
-         DEALLOCATE (full_density_beta)
-
-      DEALLOCATE (kind_of)
 
       CALL timestop(handle)
    END SUBROUTINE integrate_four_center
