@@ -59,10 +59,10 @@ MODULE hfx_energy_potential
                                               calc_screening_functions,&
                                               update_pmax_mat
    USE hfx_types,                       ONLY: &
-        alloc_containers, dealloc_containers, hfx_basis_info_type, hfx_basis_type, hfx_cache_type, &
-        hfx_cell_type, hfx_container_type, hfx_create_neighbor_cells, hfx_distribution, &
-        hfx_general_type, hfx_init_container, hfx_load_balance_type, hfx_memory_type, hfx_p_kind, &
-        hfx_pgf_list, hfx_pgf_product_list, hfx_potential_type, hfx_reset_memory_usage_counter, &
+        alloc_containers, dealloc_containers, hfx_basis_type, hfx_cache_type, hfx_cell_type, &
+        hfx_container_type, hfx_create_neighbor_cells, hfx_distribution, hfx_general_type, &
+        hfx_init_container, hfx_load_balance_type, hfx_memory_type, hfx_p_kind, hfx_pgf_list, &
+        hfx_pgf_product_list, hfx_potential_type, hfx_reset_memory_usage_counter, &
         hfx_screen_coeff_type, hfx_task_list_type, hfx_type, init_t_c_g0_lmax, log_zero, &
         pair_list_type, pair_set_list_type
    USE input_constants,                 ONLY: do_potential_mix_cl_trunc,&
@@ -162,11 +162,11 @@ CONTAINS
          iset, iw, j, jatom, jatom_block, jatom_end, jatom_start, jkind, jset, katom, katom_block, &
          katom_end
       INTEGER :: katom_start, kind_kind_idx, kkind, kset, l_max, latom, latom_block, latom_end, &
-         latom_start, lkind, lset, ma, max_am, max_pgf, max_set, mb, my_bin_id, my_bin_size, &
-         my_thread_id, n_threads, natom, nbits, ncob, ncos_max, nints, nkimages, nkind, &
-         nneighbors, nseta, nsetb, nsgf_max, pa, sgfb, shm_number_of_p_entries, shm_task_counter, &
-         shm_total_bins, sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, sphi_b_u3, &
-         sphi_c_u1, sphi_c_u2, sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, tmp_i4, unit_id
+         latom_start, lkind, lset, ma, max_pgf, max_set, mb, my_bin_id, my_bin_size, my_thread_id, &
+         n_threads, natom, nbits, ncob, ncos_max, nints, nkimages, nkind, nneighbors, nseta, &
+         nsetb, nsgf_max, pa, sgfb, shm_number_of_p_entries, shm_task_counter, shm_total_bins, &
+         sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, sphi_b_u3, sphi_c_u1, sphi_c_u2, &
+         sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, tmp_i4, unit_id
       INTEGER(int_8) :: atom_block, counter, estimate_to_store_int, max_val_memory, &
          mb_size_buffers, mb_size_f, mb_size_p, mem_compression_counter, &
          mem_compression_counter_disk, mem_eris, mem_eris_disk, mem_max_val, memsize_after, &
@@ -213,7 +213,6 @@ CONTAINS
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_ks_aux_fit_hfx
       TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(hfx_basis_info_type), POINTER                 :: basis_info
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(hfx_cache_type), DIMENSION(:), POINTER        :: integral_caches, integral_caches_disk
       TYPE(hfx_cache_type), POINTER                      :: maxval_cache, maxval_cache_disk
@@ -514,6 +513,27 @@ CONTAINS
          full_ks_beta = 0.0_dp
       END IF
 
+      ! the basis_info is replicated across all the x_data (see hfx_create_basis_types in hfx_types.F)
+      ! hence we can get basic information like max L, ... here:
+      max_set = shm_master_x_data%basis_info%max_set
+
+      ! precompute maximum nco, nsgf, max_pgf (allocation of scratch is done locally in each thread)
+      ncos_max = 0
+      nsgf_max = 0
+      max_pgf = 0
+      DO iatom = 1, natom
+         ikind = kind_of(iatom)
+         nseta = shm_master_x_data%basis_parameter(ikind)%nset
+         npgfa => shm_master_x_data%basis_parameter(ikind)%npgf
+         la_max => shm_master_x_data%basis_parameter(ikind)%lmax
+         nsgfa => shm_master_x_data%basis_parameter(ikind)%nsgf
+         DO iset = 1, nseta
+            ncos_max = MAX(ncos_max, ncoset(la_max(iset)))
+            nsgf_max = MAX(nsgf_max, nsgfa(iset))
+            max_pgf = MAX(max_pgf, npgfa(iset))
+         ENDDO
+      ENDDO
+
 !$OMP PARALLEL DEFAULT(NONE) SHARED(qs_env,&
 !$OMP                                  x_data,&
 !$OMP                                  ks_matrix,&
@@ -571,6 +591,10 @@ CONTAINS
 !$OMP                                  is_anti_symmetric,&
 !$OMP                                  do_disk_storage,&
 !$OMP                                  do_dynamic_load_balancing,&
+!$OMP                                  max_set,&
+!$OMP                                  ncos_max,&
+!$OMP                                  nsgf_max,&
+!$OMP                                  max_pgf,&
 !$OMP                                  shm_atomic_block_offset,&
 !$OMP                                  shm_set_offset,&
 !$OMP                                  shm_block_offset,&
@@ -585,13 +609,12 @@ CONTAINS
 !$OMP                                  do_print_load_balance_info) &
 !$OMP PRIVATE(i_thread,actual_x_data,potential_parameter,&
 !$OMP         general_parameter,load_balance_parameter,memory_parameter,cache_size,bits_max_val,&
-!$OMP         basis_parameter,basis_info,neris_total,neris_incore,&
+!$OMP         basis_parameter,neris_total,neris_incore,&
 !$OMP         neris_disk,neris_onthefly,mem_eris,mem_eris_disk,mem_max_val,compression_factor,&
-!$OMP         compression_factor_disk,nprim_ints,neris_tmp,max_val_memory,max_am,&
-!$OMP         max_set,ncos_max,nsgf_max,ikind,&
+!$OMP         compression_factor_disk,nprim_ints,neris_tmp,max_val_memory,ikind,&
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
 !$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,max_contraction,&
-!$OMP         max_pgf,jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
+!$OMP         jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
 !$OMP         pgf_product_list,subtr_size_mb,use_disk_storage,counter,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,&
 !$OMP         eps_storage,buffer_overflow,logger,private_lib,handle_getp,&
@@ -636,7 +659,6 @@ CONTAINS
       bits_max_val = memory_parameter%bits_max_val
 
       basis_parameter => actual_x_data%basis_parameter
-      basis_info => actual_x_data%basis_info
 
       !! initialize some counters
       neris_total = 0_int_8
@@ -652,23 +674,6 @@ CONTAINS
       neris_tmp = 0_int_8
       max_val_memory = 1_int_8
 
-      max_am = basis_info%max_am
-      max_set = basis_info%max_set
-
-      !! precompute maximum nco and allocate scratch
-      ncos_max = 0
-      nsgf_max = 0
-      DO iatom = 1, natom
-         ikind = kind_of(iatom)
-         nseta = basis_parameter(ikind)%nset
-         npgfa => basis_parameter(ikind)%npgf
-         la_max => basis_parameter(ikind)%lmax
-         nsgfa => basis_parameter(ikind)%nsgf
-         DO iset = 1, nseta
-            ncos_max = MAX(ncos_max, ncoset(la_max(iset)))
-            nsgf_max = MAX(nsgf_max, nsgfa(iset))
-         ENDDO
-      ENDDO
       !! Allocate the arrays for the integrals.
       ALLOCATE (primitive_integrals(nsgf_max**4))
       primitive_integrals = 0.0_dp
@@ -689,7 +694,6 @@ CONTAINS
       ALLOCATE (max_contraction(max_set, natom))
 
       max_contraction = 0.0_dp
-      max_pgf = 0
       DO jatom = 1, natom
          jkind = kind_of(jatom)
          lb_max => basis_parameter(jkind)%lmax
@@ -705,7 +709,6 @@ CONTAINS
             ! if the primitives are assumed to be all of max_val2, max_val2*p2s_b becomes
             ! the maximum value after multiplication with sphi_b
             max_contraction(jset, jatom) = MAXVAL((/(SUM(ABS(sphi_b(1:ncob, i))), i=sgfb, sgfb + nsgfb(jset) - 1)/))
-            max_pgf = MAX(max_pgf, npgfb(jset))
          ENDDO
       ENDDO
 
@@ -1785,7 +1788,8 @@ CONTAINS
       mb_size_buffers = mb_size_buffers + INT(nsgf_max, int_8)**2*n_threads
       subtr_size_mb = subtr_size_mb + 8_int_8*nsgf_max**2*n_threads
       !! size of screening functions (shared)
-      mb_size_buffers = mb_size_buffers + max_pgf**2*max_set**2*nkind**2 &
+      mb_size_buffers = mb_size_buffers &
+                        + max_pgf**2*max_set**2*nkind**2 &
                         + max_set**2*nkind**2 &
                         + nkind**2 &
                         + max_pgf**2*max_set**2*nkind**2
