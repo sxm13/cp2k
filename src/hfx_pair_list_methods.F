@@ -22,13 +22,14 @@ MODULE hfx_pair_list_methods
         do_potential_long, do_potential_mix_cl, do_potential_mix_cl_trunc, do_potential_mix_lg, &
         do_potential_short, do_potential_truncated
    USE kinds,                           ONLY: dp
+   USE kpoint_types,                    ONLY: kpoint_type,&
+                                              rcell_to_index
    USE libint_wrapper,                  ONLY: prim_data_f_size
    USE mathconstants,                   ONLY: pi
    USE mp2_types,                       ONLY: pair_list_type_mp2
    USE particle_types,                  ONLY: particle_type
    USE t_c_g0,                          ONLY: t_c_g0_n
    USE t_sh_p_s_c,                      ONLY: trunc_CS_poly_n20
-   USE kpoint_types,                    ONLY: kpoint_type, rcell_to_index
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -61,6 +62,9 @@ CONTAINS
 !> \param potential_parameter potential/metric to be used
 !> \param m_max ...
 !> \param do_periodic ...
+!> \param kpoints ...
+!> \param kp_idx_q ...
+!> \param kp_idx_t ...
 ! **************************************************************************************************
    SUBROUTINE build_pgf_product_list(list1, list2, product_list, nproducts, &
                                      log10_pmax, log10_eps_schwarz, neighbor_cells, &
@@ -77,15 +81,16 @@ CONTAINS
       TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
       INTEGER, INTENT(IN)                                :: m_max
       LOGICAL, INTENT(IN)                                :: do_periodic
-      INTEGER, OPTIONAL, INTENT(IN)                      :: kp_idx_q, kp_idx_t
-      TYPE(kpoint_type), OPTIONAL, INTENT(IN)            :: kpoints
+      TYPE(kpoint_type), INTENT(IN), OPTIONAL            :: kpoints
+      INTEGER, INTENT(IN), OPTIONAL                      :: kp_idx_q, kp_idx_t
 
-      INTEGER                                            :: i, j, k, l, nimages1, nimages2, tmp_i4, kp_sqt_idx
+      INTEGER                                            :: i, j, k, kp_sqt_idx, l, nimages1, &
+                                                            nimages2, tmp_i4
       LOGICAL                                            :: use_gamma
-      REAL(dp) :: den, Eta, EtaInv, factor, Fm(prim_data_f_size), G(3), im_rc(3), im_rd(3), num, &
-         omega2, omega_corr, omega_corr2, P(3), pgf_max_1, pgf_max_2, PQ(3), Q(3), R, R1, R2, &
-         ra(3), rb(3), rc(3), rd(3), Rho, RhoInv, rpq2, S1234, S1234a, S1234b, shift(3), ssss, T, &
-         temp(3), tmp, W(3), Zeta1, Zeta_C, Zeta_D, ZetapEtaInv, cell_sqt(3)
+      REAL(dp) :: cell_sqt(3), den, Eta, EtaInv, factor, Fm(prim_data_f_size), G(3), im_rc(3), &
+         im_rd(3), num, omega2, omega_corr, omega_corr2, P(3), pgf_max_1, pgf_max_2, PQ(3), Q(3), &
+         R, R1, R2, ra(3), rb(3), rc(3), rd(3), Rho, RhoInv, rpq2, S1234, S1234a, S1234b, &
+         shift(3), ssss, T, temp(3), tmp, W(3), Zeta1, Zeta_C, Zeta_D, ZetapEtaInv
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
          DIMENSION(:)                                    :: tmp_product_list
 
@@ -110,8 +115,8 @@ CONTAINS
             IF (PRESENT(kpoints)) THEN
                ! the rhs pair list gets shifted by T, so we need the S+Q-T image here
                cell_sqt = neighbor_cells(list1%image_list(i)%nbidx)%cell &
-                         + kpoints%index_to_cell(:, kp_idx_q) &
-                         - kpoints%index_to_cell(:, kp_idx_t)
+                          + kpoints%index_to_cell(:, kp_idx_q) &
+                          - kpoints%index_to_cell(:, kp_idx_t)
                kp_sqt_idx = rcell_to_index(kpoints, cell_sqt)
                IF (kp_sqt_idx == 0 .OR. neighbor_cells(list2%image_list(j)%nbidx)%kp_cell_idx /= kp_sqt_idx) &
                   CYCLE

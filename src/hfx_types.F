@@ -1542,7 +1542,8 @@ CONTAINS
 !>      07.2011 refactored
 ! **************************************************************************************************
    SUBROUTINE hfx_create_basis_types(basis_parameter, basis_info, qs_kind_set, do_admm)
-      TYPE(hfx_basis_type), DIMENSION(:), INTENT(OUT), POINTER :: basis_parameter
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(OUT), &
+         POINTER                                         :: basis_parameter
       TYPE(hfx_basis_info_type), INTENT(INOUT)           :: basis_info
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       LOGICAL, INTENT(IN)                                :: do_admm
@@ -1550,14 +1551,14 @@ CONTAINS
       CHARACTER(LEN=*), PARAMETER :: routineN = 'hfx_create_basis_types', &
          routineP = moduleN//':'//routineN
 
-      INTEGER :: handle, i, ikind, ipgf, iset, j, k, la, max_am_kind, max_coeff, &
-         max_nsgfl, max_pgf, max_pgf_kind, max_set, nkind, nl_count, nset, nseta, offset_a, &
-         offset_a1, s_offset_nl_a, sgfa, so_counter
+      CHARACTER(LEN=default_string_length)               :: basis_type
+      INTEGER :: handle, i, ikind, ipgf, iset, j, k, la, max_am_kind, max_coeff, max_nsgfl, &
+         max_pgf, max_pgf_kind, max_set, nkind, nl_count, nset, nseta, offset_a, offset_a1, &
+         s_offset_nl_a, sgfa, so_counter
       INTEGER, DIMENSION(:), POINTER                     :: la_max, la_min, npgfa, nshell
       INTEGER, DIMENSION(:, :), POINTER                  :: first_sgfa, nl_a
       REAL(dp), DIMENSION(:, :), POINTER                 :: sphi_a
       TYPE(gto_basis_set_type), POINTER                  :: orb_basis_a
-      CHARACTER(LEN=default_string_length)               :: basis_type
 
       CALL timeset(routineN, handle)
 
@@ -1947,8 +1948,8 @@ CONTAINS
 !> \author Manuel Guidon
 ! **************************************************************************************************
    SUBROUTINE hfx_create_neighbor_cells(x_data, cell)
-      TYPE(hfx_type), POINTER, INTENT(INOUT)             :: x_data
-      TYPE(cell_type), POINTER, INTENT(IN)               :: cell
+      TYPE(hfx_type), INTENT(INOUT), POINTER             :: x_data
+      TYPE(cell_type), INTENT(IN), POINTER               :: cell
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'hfx_create_neighbor_cells', &
          routineP = moduleN//':'//routineN
@@ -1956,14 +1957,13 @@ CONTAINS
       CHARACTER(LEN=512)                                 :: error_msg
       CHARACTER(LEN=64)                                  :: char_nshells
       INTEGER :: i, idx, ikind, ipgf, iset, ishell, j, jkind, jpgf, jset, jshell, k, kshell, l, &
-         m(3), max_shell, nseta, nsetb, total_number_of_cells, ub, ub_max
+         m(3), max_shell, nseta, nsetb, pbc_shells, total_number_of_cells, ub, ub_max
       INTEGER, DIMENSION(:), POINTER                     :: la_max, lb_max, npgfa, npgfb
       LOGICAL                                            :: image_cell_found, nothing_more_to_add
       REAL(dp) :: cross_product(3), dist_min, distance(14), l_min, normal(3, 6), P(3, 14), &
          plane_vector(3, 2), point_in_plane(3), r(3), R1, R_max, R_max_stress, s(3), x, y, z, Zeta1
       REAL(dp), DIMENSION(:, :), POINTER                 :: zeta, zetb
       TYPE(hfx_cell_type), DIMENSION(:), POINTER         :: tmp_neighbor_cells
-      INTEGER                                            :: pbc_shells
 
       total_number_of_cells = 0
       pbc_shells = x_data%periodic_parameter%number_of_shells_from_input

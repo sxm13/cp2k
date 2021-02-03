@@ -842,8 +842,10 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief Figure out the image index (from the KP code) given the (integer) neighbor cell coordinates
-!> \param cti The cell_to_index from the kpoint information structure
-!> \param cell The integer (but converted to real) cell coordinates from the hfx_cell_type
+!> \param kpoints ...
+!> \param rcell ...
+!> \param cell The integer (but converted to real) cell coordinates from the hfx_cell_type UNMATCHED_PROCEDURE_ARGUMENT: please check
+!> \param cti The cell_to_index from the kpoint information structure UNMATCHED_PROCEDURE_ARGUMENT: please check
 !> \return The positive index if found, -1 if out of bounds, 0 may be returned from cell_to_index
 ! **************************************************************************************************
    PURE FUNCTION rcell_to_index(kpoints, rcell) RESULT(cindex)
@@ -861,7 +863,6 @@ CONTAINS
 
       cindex = kpoints%cell_to_index(icell(1), icell(2), icell(3))
    END FUNCTION rcell_to_index
-
 
 ! **************************************************************************************************
 

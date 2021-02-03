@@ -31,8 +31,7 @@ MODULE hfx_energy_potential
                                               dbcsr_dot,&
                                               dbcsr_get_matrix_type,&
                                               dbcsr_p_type,&
-                                              dbcsr_type_antisymmetric,&
-                                              dbcsr_type_symmetric
+                                              dbcsr_type_antisymmetric
    USE gamma,                           ONLY: init_md_ftable
    USE hfx_communication,               ONLY: distribute_ks_matrix,&
                                               get_atomic_block_maps,&
@@ -159,15 +158,15 @@ CONTAINS
          handle_getP, handle_load, handle_main, i, i_list_ij, i_list_kl, i_set_list_ij, &
          i_set_list_ij_start, i_set_list_ij_stop, i_set_list_kl, i_set_list_kl_start, &
          i_set_list_kl_stop, i_thread, iatom, iatom_block, iatom_end, iatom_start, ikind, img, &
-         kp_t_idx, kp_q_idx, iset, iw, j, jatom, jatom_block, jatom_end, jatom_start, jkind, &
-         jset, katom
-      INTEGER :: katom_block, katom_end, katom_start, kind_kind_idx, kkind, kset, l_max, latom, &
+         iset, iw, j, jatom, jatom_block, jatom_end, jatom_start, jkind, jset, katom, katom_block, &
+         katom_end
+      INTEGER :: katom_start, kind_kind_idx, kkind, kp_q_idx, kp_t_idx, kset, l_max, latom, &
          latom_block, latom_end, latom_start, lkind, lset, ma, max_am, max_pgf, max_set, mb, &
-         my_bin_id, my_bin_size, my_thread_id, n_threads, natom, nbits, ncob, &
-         ncos_max, nints, nkimages, nkind, nneighbors, nseta, nsetb, nsgf_max, pa, sgfb, &
+         my_bin_id, my_bin_size, my_thread_id, n_threads, natom, nbidx, nbits, ncob, ncos_max, &
+         nignored, nints, nkimages, nkind, nneighbors, nseta, nsetb, nsgf_max, pa, sgfb, &
          shm_task_counter, shm_total_bins, sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, &
          sphi_b_u3, sphi_c_u1, sphi_c_u2, sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, &
-         tmp_i4, unit_id, nignored
+         tmp_i4, unit_id
       INTEGER(int_8) :: atom_block, counter, estimate_to_store_int, max_val_memory, &
          mb_size_buffers, mb_size_f, mb_size_p, mem_compression_counter, &
          mem_compression_counter_disk, mem_eris, mem_eris_disk, mem_max_val, memsize_after, &
@@ -197,8 +196,8 @@ CONTAINS
          max_val1, max_val2, max_val2_set, pmax_atom, pmax_blocks, pmax_entry, ra(3), rab2, rb(3), &
          rc(3), rcd2, rd(3), screen_kind_ij, screen_kind_kl, spherical_estimate, symm_fac
       REAL(dp), ALLOCATABLE, DIMENSION(:) :: ee_buffer1, ee_buffer2, ee_primitives_tmp, ee_work, &
-         ee_work2, kac_buf, kad_buf, kbc_buf, kbd_buf, pac_buf, pad_buf, pbc_buf, pbd_buf
-      REAL(dp), ALLOCATABLE, DIMENSION(:)                :: primitive_integrals
+         ee_work2, kac_buf, kad_buf, kbc_buf, kbd_buf, pac_buf, pad_buf, pbc_buf, pbd_buf, &
+         primitive_integrals
       REAL(dp), DIMENSION(:, :), POINTER :: full_density_alpha, full_density_beta, full_ks_alpha, &
          full_ks_beta, max_contraction, ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, shm_pmax_atom, &
          shm_pmax_block, sphi_b, zeta, zetb, zetc, zetd
@@ -245,7 +244,6 @@ CONTAINS
          DIMENSION(:)                                    :: set_list_ij, set_list_kl
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
-      integer :: nbidx
 
       NULLIFY (dft_control)
 
@@ -845,7 +843,7 @@ CONTAINS
 !$OMP BARRIER
 
       !! Initialize a prefactor depending on the fraction and the number of spins
-      fac = MERGE(1.0_dp, 0.5_dp, is_unrestricted) * hf_fraction
+      fac = MERGE(1.0_dp, 0.5_dp, is_unrestricted)*hf_fraction
 
       !! Call routines that distribute the load on all processes.
       !! If we want to screen on a initial density matrix, there is an optional parameter.
@@ -1481,7 +1479,7 @@ CONTAINS
 ! !$OMP )
                         DO kp_t_idx = 1, nkimages
 #if 1
-                              PRINT *, "T, nkimages:", kp_t_idx, nkimages
+                           PRINT *, "T, nkimages:", kp_t_idx, nkimages
 #endif
                            DO kp_q_idx = 1, nkimages
                               !! Calculate integrals if we run out of buffer or the geometry did change
@@ -2232,9 +2230,7 @@ CONTAINS
 !> \param zetd ...
 !> \param primitive_integrals array of primitive_integrals
 !> \param potential_parameter contains info for libint
-!> \param neighbor_cells_a Periodic images for a in \f$ (μ^0 ν^a|λ^b σ^{b+c}) \f$
-!> \param neighbor_cells_b Periodic images for b in \f$ (μ^0 ν^a|λ^b σ^{b+c}) \f$, limit to one for KP support to avoid summation
-!> \param neighbor_cells_c Periodic images for c in \f$ (μ^0 ν^a|λ^b σ^{b+c}) \f$, limit to one for KP support to avoid summation
+!> \param neighbor_cells ...
 !> \param screen1 set based coefficients for near field screening
 !> \param screen2 set based coefficients for near field screening
 !> \param eps_schwarz threshold
@@ -2265,6 +2261,12 @@ CONTAINS
 !> \param ee_buffer2 ...
 !> \param ee_primitives_tmp ...
 !> \param do_periodic ...
+!> \param kpoints ...
+!> \param kp_idx_q ...
+!> \param kp_idx_t ...
+!> \param neighbor_cells_a Periodic images for a in \f$ (μ^0 ν^a|λ^b σ^{b+c}) \f$ UNMATCHED_PROCEDURE_ARGUMENT: please check
+!> \param neighbor_cells_b Periodic images for b in \f$ (μ^0 ν^a|λ^b σ^{b+c}) \f$, limit to one for KP support to avoid summation UNMATCHED_PROCEDURE_ARGUMENT: please check
+!> \param neighbor_cells_c Periodic images for c in \f$ (μ^0 ν^a|λ^b σ^{b+c}) \f$, limit to one for KP support to avoid summation UNMATCHED_PROCEDURE_ARGUMENT: please check
 !> \par History
 !>      11.2006 created [Manuel Guidon]
 !>      02.2009 completely rewritten screening part [Manuel Guidon]
@@ -2302,7 +2304,6 @@ CONTAINS
          lc_max, ld_min, ld_max, nsgfa, nsgfb, nsgfc, nsgfd, sphi_a_u1, sphi_a_u2, sphi_a_u3, &
          sphi_b_u1, sphi_b_u2, sphi_b_u3, sphi_c_u1, sphi_c_u2, sphi_c_u3, sphi_d_u1, sphi_d_u2, &
          sphi_d_u3
-      INTEGER, INTENT(IN), OPTIONAL                      :: kp_idx_q, kp_idx_t
       REAL(dp), DIMENSION(1:npgfa), INTENT(IN)           :: zeta
       REAL(dp), DIMENSION(1:npgfb), INTENT(IN)           :: zetb
       REAL(dp), DIMENSION(1:npgfc), INTENT(IN)           :: zetc
@@ -2329,7 +2330,8 @@ CONTAINS
       REAL(dp), DIMENSION(:), INTENT(INOUT)              :: ee_work, ee_work2, ee_buffer1, &
                                                             ee_buffer2, ee_primitives_tmp
       LOGICAL, INTENT(IN)                                :: do_periodic
-      TYPE(kpoint_type), POINTER, OPTIONAL, INTENT(IN)   :: kpoints
+      TYPE(kpoint_type), INTENT(IN), OPTIONAL, POINTER   :: kpoints
+      INTEGER, INTENT(IN), OPTIONAL                      :: kp_idx_q, kp_idx_t
 
       INTEGER :: ipgf, jpgf, kpgf, la, lb, lc, ld, list_ij, list_kl, lpgf, max_l, ncoa, ncob, &
          ncoc, ncod, nelements_ij, nelements_kl, nproducts, nsgfla, nsgflb, nsgflc, nsgfld, nsoa, &
