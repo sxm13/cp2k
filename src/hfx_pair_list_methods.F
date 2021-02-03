@@ -28,6 +28,7 @@ MODULE hfx_pair_list_methods
    USE particle_types,                  ONLY: particle_type
    USE t_c_g0,                          ONLY: t_c_g0_n
    USE t_sh_p_s_c,                      ONLY: trunc_CS_poly_n20
+   USE kpoint_types,                    ONLY: kpoint_type, rcell_to_index
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -63,7 +64,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE build_pgf_product_list(list1, list2, product_list, nproducts, &
                                      log10_pmax, log10_eps_schwarz, neighbor_cells, &
-                                     cell, potential_parameter, m_max, do_periodic)
+                                     cell, potential_parameter, m_max, do_periodic, &
+                                     kpoints, kp_idx_q, kp_idx_t)
 
       TYPE(hfx_pgf_list), INTENT(IN)                     :: list1, list2
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
@@ -75,13 +77,15 @@ CONTAINS
       TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
       INTEGER, INTENT(IN)                                :: m_max
       LOGICAL, INTENT(IN)                                :: do_periodic
+      INTEGER, OPTIONAL, INTENT(IN)                      :: kp_idx_q, kp_idx_t
+      TYPE(kpoint_type), OPTIONAL, INTENT(IN)            :: kpoints
 
-      INTEGER                                            :: i, j, k, l, nimages1, nimages2, tmp_i4
+      INTEGER                                            :: i, j, k, l, nimages1, nimages2, tmp_i4, kp_sqt_idx
       LOGICAL                                            :: use_gamma
       REAL(dp) :: den, Eta, EtaInv, factor, Fm(prim_data_f_size), G(3), im_rc(3), im_rd(3), num, &
          omega2, omega_corr, omega_corr2, P(3), pgf_max_1, pgf_max_2, PQ(3), Q(3), R, R1, R2, &
          ra(3), rb(3), rc(3), rd(3), Rho, RhoInv, rpq2, S1234, S1234a, S1234b, shift(3), ssss, T, &
-         temp(3), tmp, W(3), Zeta1, Zeta_C, Zeta_D, ZetapEtaInv
+         temp(3), tmp, W(3), Zeta1, Zeta_C, Zeta_D, ZetapEtaInv, cell_sqt(3)
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
          DIMENSION(:)                                    :: tmp_product_list
 
@@ -101,7 +105,18 @@ CONTAINS
          pgf_max_1 = list1%image_list(i)%pgf_max
          ra = list1%image_list(i)%ra
          rb = list1%image_list(i)%rb
+
          DO j = 1, nimages2
+            IF (PRESENT(kpoints)) THEN
+               ! the rhs pair list gets shifted by T, so we need the S+Q-T image here
+               cell_sqt = neighbor_cells(list1%image_list(i)%nbidx)%cell &
+                         + kpoints%index_to_cell(:, kp_idx_q) &
+                         - kpoints%index_to_cell(:, kp_idx_t)
+               kp_sqt_idx = rcell_to_index(kpoints, cell_sqt)
+               IF (kp_sqt_idx == 0 .OR. neighbor_cells(list2%image_list(j)%nbidx)%kp_cell_idx /= kp_sqt_idx) &
+                  CYCLE
+            END IF
+
             pgf_max_2 = list2%image_list(j)%pgf_max
             IF (pgf_max_1 + pgf_max_2 + log10_pmax < log10_eps_schwarz) CYCLE
             Q = list2%image_list(j)%P
@@ -125,6 +140,18 @@ CONTAINS
             END IF
 
             DO k = 1, SIZE(neighbor_cells)
+               IF (PRESENT(kpoints)) THEN
+                  IF (neighbor_cells(k)%kp_cell_idx /= kp_idx_t) &
+                     CYCLE
+#if 0
+                  PRINT '(A,4I4)', &
+                     "S Q T R:", &
+                     neighbor_cells(list1%image_list(i)%nbidx)%kp_cell_idx, &
+                     kp_idx_q, kp_idx_t, &
+                     neighbor_cells(list2%image_list(j)%nbidx)%kp_cell_idx
+#endif
+               END IF
+
                IF (do_periodic) THEN
                   im_rc = rc + shift + neighbor_cells(k)%cell_r(:)
                   im_rd = rd + shift + neighbor_cells(k)%cell_r(:)
@@ -397,6 +424,7 @@ CONTAINS
                   pair%ra = ra
                   pair%rb = im_B
                   pair%rab2 = rab2
+                  pair%nbidx = i  ! remember the neighbor_cell index
 
                   pair%S1234 = (-Zeta_A*Zeta_B*ZetaInv*rab2)
                   pair%P = (Zeta_A*ra + Zeta_B*im_B)*ZetaInv
@@ -524,7 +552,7 @@ CONTAINS
    END SUBROUTINE build_pair_list
 
 ! **************************************************************************************************
-!> \brief Build an index list of which atoms (i, j) and (j, i) are to be considered pairs
+!> \brief Build an index list of which atoms (i, j) and (j, i) are to be considered pairs (based on screening)
 !> \param atomic_pair_list ...
 !> \param kind_of ...
 !> \param basis_parameter ...
@@ -541,17 +569,15 @@ CONTAINS
                                      blocks)
       LOGICAL, DIMENSION(:, :), INTENT(OUT)              :: atomic_pair_list
       INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
-      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: basis_parameter
-      TYPE(particle_type), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: particle_set
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN)     :: basis_parameter
+      TYPE(particle_type), DIMENSION(:), INTENT(IN)      :: particle_set
       LOGICAL, INTENT(IN)                                :: do_periodic
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
          INTENT(IN)                                      :: coeffs_kind
       REAL(KIND=dp), INTENT(IN)                          :: coeffs_kind_max0, log10_eps_schwarz
-      TYPE(cell_type), INTENT(IN), POINTER               :: cell
+      TYPE(cell_type), INTENT(IN)                        :: cell
       TYPE(hfx_block_range_type), DIMENSION(:), &
-         INTENT(IN), POINTER                             :: blocks
+         INTENT(IN)                                      :: blocks
 
       INTEGER                                            :: iatom, iblock, ikind, jatom, jblock, &
                                                             jkind, nseta, nsetb
@@ -571,9 +597,8 @@ CONTAINS
                   nsetb = basis_parameter(jkind)%nset
                   rb = particle_set(jatom)%r(:)
 
-                  IF (do_periodic) THEN
+                  IF (do_periodic) &
                      rb = ra + pbc(rb - ra, cell)
-                  END IF
 
                   rab2 = SUM((ra - rb)**2)
 

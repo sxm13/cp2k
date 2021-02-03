@@ -514,8 +514,6 @@ CONTAINS
                                    primitive_integrals, &
                                    mp2_potential_parameter, &
                                    actual_x_data%neighbor_cells, &
-                                   actual_x_data%neighbor_cells, &
-                                   actual_x_data%neighbor_cells, &
                                    screen_coeffs_set(jset, iset, jkind, ikind)%x, &
                                    screen_coeffs_set(lset, kset, lkind, kkind)%x, eps_schwarz, &
                                    max_contraction_val, cartesian_estimate, cell, neris_tmp, &

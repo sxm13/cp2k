@@ -2366,15 +2366,13 @@ CONTAINS
 
       shm_bins_per_rank(i_thread + 1) = nbins
 !$OMP BARRIER
-      nbins = 0
-      DO i = 1, n_threads
-         nbins = nbins + shm_bins_per_rank(i)
-      END DO
-      my_rank = para_env%mepos
-      nranks = para_env%num_pe
+      nbins = SUM(shm_bins_per_rank)
 
 !$OMP BARRIER
 !$OMP MASTER
+      my_rank = para_env%mepos
+      nranks = para_env%num_pe
+
       ALLOCATE (bins_per_rank(nranks))
       bins_per_rank = 0
 

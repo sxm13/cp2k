@@ -53,6 +53,7 @@ MODULE kpoint_types
    PUBLIC :: kpoint_env_create, get_kpoint_env
    PUBLIC :: kpoint_sym_type
    PUBLIC :: kpoint_sym_create
+   PUBLIC :: rcell_to_index
 
 ! **************************************************************************************************
 !> \brief Keeps information about a specific k-point
@@ -168,6 +169,7 @@ MODULE kpoint_types
       TYPE(kpoint_sym_p_type), DIMENSION(:), &
          POINTER                              :: kp_sym => Null()
       TYPE(qs_matrix_pools_type), POINTER     :: mpools => Null()
+
    END TYPE kpoint_type
 
 ! **************************************************************************************************
@@ -837,6 +839,29 @@ CONTAINS
       END IF
 
    END SUBROUTINE kpoint_sym_release
+
+! **************************************************************************************************
+!> \brief Figure out the image index (from the KP code) given the (integer) neighbor cell coordinates
+!> \param cti The cell_to_index from the kpoint information structure
+!> \param cell The integer (but converted to real) cell coordinates from the hfx_cell_type
+!> \return The positive index if found, -1 if out of bounds, 0 may be returned from cell_to_index
+! **************************************************************************************************
+   PURE FUNCTION rcell_to_index(kpoints, rcell) RESULT(cindex)
+      TYPE(kpoint_type), INTENT(IN)                      :: kpoints
+      REAL(KIND=dp), DIMENSION(3), INTENT(IN)            :: rcell
+      INTEGER                                            :: cindex
+
+      INTEGER, DIMENSION(3)                              :: icell
+
+      cindex = 0
+      icell = NINT(rcell)
+
+      IF (ANY(icell < LBOUND(kpoints%cell_to_index)) .OR. ANY(icell > UBOUND(kpoints%cell_to_index))) &
+         RETURN
+
+      cindex = kpoints%cell_to_index(icell(1), icell(2), icell(3))
+   END FUNCTION rcell_to_index
+
 
 ! **************************************************************************************************
 

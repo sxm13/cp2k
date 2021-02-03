@@ -204,6 +204,7 @@ MODULE hfx_types
    TYPE hfx_cell_type
       REAL(dp)                                 :: cell(3)
       REAL(dp)                                 :: cell_r(3)
+      INTEGER                                  :: kp_cell_idx = -1
    END TYPE
 
 ! **************************************************************************************************
@@ -311,6 +312,7 @@ MODULE hfx_types
       REAL(dp)                                 :: P(3)
       REAL(dp)                                 :: R
       REAL(dp)                                 :: pgf_max
+      INTEGER                                  :: nbidx
    END TYPE
 
 ! **************************************************************************************************
@@ -645,11 +647,7 @@ CONTAINS
             actual_x_data%periodic_parameter%number_of_shells = int_val
             actual_x_data%periodic_parameter%mode = int_val
             CALL get_cell(cell=cell, periodic=actual_x_data%periodic_parameter%perd)
-            IF (SUM(actual_x_data%periodic_parameter%perd) == 0) THEN
-               actual_x_data%periodic_parameter%do_periodic = .FALSE.
-            ELSE
-               actual_x_data%periodic_parameter%do_periodic = .TRUE.
-            END IF
+            actual_x_data%periodic_parameter%do_periodic = ANY(actual_x_data%periodic_parameter%perd > 0)
 
             !! SCREENING section
             hf_sub_section => section_vals_get_subs_vals(hfx_section, "SCREENING", i_rep_section=irep)
@@ -836,7 +834,7 @@ CONTAINS
                CALL section_vals_val_get(hf_pbc_section, "NUMBER_OF_SHELLS", i_val=pbc_shells)
                actual_x_data%periodic_parameter%number_of_shells_from_input = pbc_shells
                ALLOCATE (actual_x_data%neighbor_cells(1))
-               CALL hfx_create_neighbor_cells(actual_x_data, pbc_shells, cell, i_thread)
+               CALL hfx_create_neighbor_cells(actual_x_data, cell)
             ELSE
                ALLOCATE (actual_x_data%neighbor_cells(1))
                ! ** Initialize this guy to enable non periodic stress regtests
@@ -1544,21 +1542,22 @@ CONTAINS
 !>      07.2011 refactored
 ! **************************************************************************************************
    SUBROUTINE hfx_create_basis_types(basis_parameter, basis_info, qs_kind_set, do_admm)
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(hfx_basis_info_type)                          :: basis_info
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(OUT), POINTER :: basis_parameter
+      TYPE(hfx_basis_info_type), INTENT(INOUT)           :: basis_info
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       LOGICAL, INTENT(IN)                                :: do_admm
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'hfx_create_basis_types', &
          routineP = moduleN//':'//routineN
 
-      INTEGER :: co_counter, handle, i, ikind, ipgf, iset, j, k, la, max_am_kind, max_coeff, &
+      INTEGER :: handle, i, ikind, ipgf, iset, j, k, la, max_am_kind, max_coeff, &
          max_nsgfl, max_pgf, max_pgf_kind, max_set, nkind, nl_count, nset, nseta, offset_a, &
          offset_a1, s_offset_nl_a, sgfa, so_counter
       INTEGER, DIMENSION(:), POINTER                     :: la_max, la_min, npgfa, nshell
       INTEGER, DIMENSION(:, :), POINTER                  :: first_sgfa, nl_a
       REAL(dp), DIMENSION(:, :), POINTER                 :: sphi_a
       TYPE(gto_basis_set_type), POINTER                  :: orb_basis_a
+      CHARACTER(LEN=default_string_length)               :: basis_type
 
       CALL timeset(routineN, handle)
 
@@ -1568,21 +1567,17 @@ CONTAINS
       ALLOCATE (basis_parameter(nkind))
       max_set = 0
       DO ikind = 1, nkind
-         IF (.NOT. do_admm) THEN
-            CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type="ORB")
-            CALL get_qs_kind_set(qs_kind_set, &
-                                 maxsgf=basis_info%max_sgf, &
-                                 maxnset=basis_info%max_set, &
-                                 maxlgto=basis_info%max_am)
+         basis_type = "ORB"
+         IF (do_admm) &
+            basis_type = "AUX_FIT"
 
-         ELSE
-            CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type="AUX_FIT")
-            CALL get_qs_kind_set(qs_kind_set, &
-                                 maxsgf=basis_info%max_sgf, &
-                                 maxnset=basis_info%max_set, &
-                                 maxlgto=basis_info%max_am, &
-                                 basis_type="AUX_FIT")
-         END IF
+         CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type=basis_type)
+         CALL get_qs_kind_set(qs_kind_set, &
+                              maxsgf=basis_info%max_sgf, &
+                              maxnset=basis_info%max_set, &
+                              maxlgto=basis_info%max_am, &
+                              basis_type=basis_type)
+
          IF (basis_info%max_set < max_set) CPABORT("UNEXPECTED MAX_SET")
          max_set = MAX(max_set, basis_info%max_set)
          CALL get_gto_basis_set(gto_basis_set=orb_basis_a, &
@@ -1602,6 +1597,8 @@ CONTAINS
                                 kind_radius=basis_parameter(ikind)%kind_radius)
       END DO
       DO ikind = 1, nkind
+         ! TODO: the following uses the basis_info%max_am of the last kind from the previous iteration
+         !       to determine the boundaries for nsgfl, is that correct?  Why?
          ALLOCATE (basis_parameter(ikind)%nsgfl(0:basis_info%max_am, max_set))
          basis_parameter(ikind)%nsgfl = 0
          nset = basis_parameter(ikind)%nset
@@ -1656,8 +1653,6 @@ CONTAINS
                s_offset_nl_a = 0
                DO la = la_min(iset), la_max(iset)
                   offset_a = offset_a1 + ncoset(la - 1)
-                  co_counter = 0
-                  co_counter = co_counter + 1
                   so_counter = 0
                   DO k = sgfa + s_offset_nl_a, sgfa + s_offset_nl_a + nso(la)*nl_a(la, iset) - 1
                      DO i = offset_a + 1, offset_a + nco(la)
@@ -1946,18 +1941,14 @@ CONTAINS
 !> \brief - This routine computes the neighbor cells that are taken into account
 !>        in periodic runs
 !> \param x_data contains all relevant data structures for hfx runs
-!> \param pbc_shells number of shells taken into account
 !> \param cell cell
-!> \param i_thread current thread ID
 !> \par History
 !>      09.2007 created [Manuel Guidon]
 !> \author Manuel Guidon
 ! **************************************************************************************************
-   SUBROUTINE hfx_create_neighbor_cells(x_data, pbc_shells, cell, i_thread)
-      TYPE(hfx_type), POINTER                            :: x_data
-      INTEGER, INTENT(INOUT)                             :: pbc_shells
-      TYPE(cell_type), POINTER                           :: cell
-      INTEGER, INTENT(IN)                                :: i_thread
+   SUBROUTINE hfx_create_neighbor_cells(x_data, cell)
+      TYPE(hfx_type), POINTER, INTENT(INOUT)             :: x_data
+      TYPE(cell_type), POINTER, INTENT(IN)               :: cell
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'hfx_create_neighbor_cells', &
          routineP = moduleN//':'//routineN
@@ -1972,34 +1963,36 @@ CONTAINS
          plane_vector(3, 2), point_in_plane(3), r(3), R1, R_max, R_max_stress, s(3), x, y, z, Zeta1
       REAL(dp), DIMENSION(:, :), POINTER                 :: zeta, zetb
       TYPE(hfx_cell_type), DIMENSION(:), POINTER         :: tmp_neighbor_cells
+      INTEGER                                            :: pbc_shells
 
       total_number_of_cells = 0
+      pbc_shells = x_data%periodic_parameter%number_of_shells_from_input
 
       ! ** Check some settings
-      IF (i_thread == 1) THEN
-         IF (x_data%potential_parameter%potential_type /= do_potential_truncated .AND. &
-             x_data%potential_parameter%potential_type /= do_potential_short .AND. &
-             x_data%potential_parameter%potential_type /= do_potential_mix_cl_trunc .AND. &
-             x_data%potential_parameter%potential_type /= do_potential_id) THEN
+!$OMP MASTER
+      IF (x_data%potential_parameter%potential_type /= do_potential_truncated .AND. &
+          x_data%potential_parameter%potential_type /= do_potential_short .AND. &
+          x_data%potential_parameter%potential_type /= do_potential_mix_cl_trunc .AND. &
+          x_data%potential_parameter%potential_type /= do_potential_id) THEN
+         CALL cp_warn(__LOCATION__, &
+                      "Periodic Hartree Fock calculation requested without use "// &
+                      "of a truncated or shortrange potential. This may lead to unphysical total energies. "// &
+                      "Use a truncated potential to avoid possible problems.")
+      ELSE
+         l_min = MIN(plane_distance(1, 0, 0, cell), &
+                     plane_distance(0, 1, 0, cell), &
+                     plane_distance(0, 0, 1, cell))
+         l_min = 0.5_dp*l_min
+         IF (x_data%potential_parameter%cutoff_radius >= l_min) THEN
             CALL cp_warn(__LOCATION__, &
-                         "Periodic Hartree Fock calculation requested without use "// &
-                         "of a truncated or shortrange potential. This may lead to unphysical total energies. "// &
-                         "Use a truncated potential to avoid possible problems.")
-         ELSE
-            l_min = MIN(plane_distance(1, 0, 0, cell), &
-                        plane_distance(0, 1, 0, cell), &
-                        plane_distance(0, 0, 1, cell))
-            l_min = 0.5_dp*l_min
-            IF (x_data%potential_parameter%cutoff_radius >= l_min) THEN
-               CALL cp_warn(__LOCATION__, &
-                            "Periodic Hartree Fock calculation requested with use "// &
-                            "of a truncated or shortrange potential. The cutoff radius is larger than half "// &
-                            "the minimal cell dimension. This may lead to unphysical "// &
-                            "total energies. Reduce the cutoff radius in order to avoid "// &
-                            "possible problems.")
-            END IF
+                         "Periodic Hartree Fock calculation requested with use "// &
+                         "of a truncated or shortrange potential. The cutoff radius is larger than half "// &
+                         "the minimal cell dimension. This may lead to unphysical "// &
+                         "total energies. Reduce the cutoff radius in order to avoid "// &
+                         "possible problems.")
          END IF
       END IF
+!$OMP END MASTER
 
       SELECT CASE (x_data%potential_parameter%potential_type)
       CASE (do_potential_truncated, do_potential_mix_cl_trunc, do_potential_short)
@@ -2252,17 +2245,16 @@ CONTAINS
             DO i = 0, x_data%periodic_parameter%number_of_shells
                total_number_of_cells = total_number_of_cells + count_cells_perd(i, x_data%periodic_parameter%perd)
             END DO
+!$OMP MASTER
             IF (total_number_of_cells < SIZE(x_data%neighbor_cells)) THEN
-               IF (i_thread == 1) THEN
-
-                  WRITE (char_nshells, '(I3)') SIZE(x_data%neighbor_cells)
-                  WRITE (error_msg, '(A,A,A)') "Periodic Hartree Fock calculation requested with use "// &
-                     "of a truncated potential. The number of shells to be considered "// &
-                     "might be too small. CP2K conservatively estimates to need "//TRIM(char_nshells)//" periodic images "// &
-                     "Please carefully check if you get converged results."
-                  CPWARN(error_msg)
-               END IF
+               WRITE (char_nshells, '(I3)') SIZE(x_data%neighbor_cells)
+               WRITE (error_msg, '(A,A,A)') "Periodic Hartree Fock calculation requested with use "// &
+                  "of a truncated potential. The number of shells to be considered "// &
+                  "might be too small. CP2K conservatively estimates to need "//TRIM(char_nshells)//" periodic images "// &
+                  "Please carefully check if you get converged results."
+               CPWARN(error_msg)
             END IF
+!$OMP END MASTER
             DEALLOCATE (x_data%neighbor_cells)
             ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
             m = 0

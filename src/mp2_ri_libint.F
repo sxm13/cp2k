@@ -636,8 +636,6 @@ CONTAINS
                                 primitive_integrals, &
                                 mp2_potential_parameter, &
                                 actual_x_data%neighbor_cells, &
-                                actual_x_data%neighbor_cells, &
-                                actual_x_data%neighbor_cells, &
                                 screen_coeffs_set(1, 1, 1, 1)%x, &
                                 screen_coeffs_set(1, 1, 1, 1)%x, eps_schwarz, &
                                 max_contraction_val, cartesian_estimate, cell, neris_tmp, &
@@ -867,8 +865,6 @@ CONTAINS
                                 primitive_integrals, &
                                 mp2_potential_parameter, &
                                 actual_x_data%neighbor_cells, &
-                                actual_x_data%neighbor_cells, &
-                                actual_x_data%neighbor_cells, &
                                 screen_coeffs_set(kset, kset, kkind, kkind)%x, &
                                 screen_coeffs_set(kset, kset, kkind, kkind)%x, eps_schwarz, &
                                 max_contraction_val, cartesian_estimate, cell, neris_tmp, &
@@ -1092,8 +1088,7 @@ CONTAINS
       IF (do_periodic) THEN
          ! ** Rebuild neighbor lists in case the cell has changed (i.e. NPT MD)
          actual_x_data%periodic_parameter%number_of_shells = actual_x_data%periodic_parameter%mode
-         CALL hfx_create_neighbor_cells(actual_x_data, actual_x_data%periodic_parameter%number_of_shells_from_input, &
-                                        cell, i_thread)
+         CALL hfx_create_neighbor_cells(actual_x_data, cell)
       END IF
 
       basis_parameter => actual_x_data%basis_parameter
