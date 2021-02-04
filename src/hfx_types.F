@@ -648,11 +648,7 @@ CONTAINS
             actual_x_data%periodic_parameter%number_of_shells = int_val
             actual_x_data%periodic_parameter%mode = int_val
             CALL get_cell(cell=cell, periodic=actual_x_data%periodic_parameter%perd)
-            IF (SUM(actual_x_data%periodic_parameter%perd) == 0) THEN
-               actual_x_data%periodic_parameter%do_periodic = .FALSE.
-            ELSE
-               actual_x_data%periodic_parameter%do_periodic = .TRUE.
-            END IF
+            actual_x_data%periodic_parameter%do_periodic = ANY(actual_x_data%periodic_parameter%perd > 0)
 
             !! SCREENING section
             hf_sub_section => section_vals_get_subs_vals(hfx_section, "SCREENING", i_rep_section=irep)
@@ -1528,16 +1524,18 @@ CONTAINS
 !>      07.2011 refactored
 ! **************************************************************************************************
    SUBROUTINE hfx_create_basis_types(basis_parameter, basis_info, qs_kind_set, do_admm)
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(hfx_basis_info_type)                          :: basis_info
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(OUT), &
+         POINTER                                         :: basis_parameter
+      TYPE(hfx_basis_info_type), INTENT(OUT)             :: basis_info
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       LOGICAL, INTENT(IN)                                :: do_admm
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'hfx_create_basis_types'
 
-      INTEGER :: co_counter, handle, i, ikind, ipgf, iset, j, k, la, max_am_kind, max_coeff, &
-         max_nsgfl, max_pgf, max_pgf_kind, max_set, nkind, nl_count, nset, nseta, offset_a, &
-         offset_a1, s_offset_nl_a, sgfa, so_counter
+      CHARACTER(LEN=default_string_length)               :: basis_type
+      INTEGER :: handle, i, ikind, ipgf, iset, j, k, la, max_am_kind, max_coeff, max_nsgfl, &
+         max_pgf, max_pgf_kind, max_set, nkind, nl_count, nset, nseta, offset_a, offset_a1, &
+         s_offset_nl_a, sgfa, so_counter
       INTEGER, DIMENSION(:), POINTER                     :: la_max, la_min, npgfa, nshell
       INTEGER, DIMENSION(:, :), POINTER                  :: first_sgfa, nl_a
       REAL(dp), DIMENSION(:, :), POINTER                 :: sphi_a
@@ -1551,21 +1549,17 @@ CONTAINS
       ALLOCATE (basis_parameter(nkind))
       max_set = 0
       DO ikind = 1, nkind
-         IF (.NOT. do_admm) THEN
-            CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type="ORB")
-            CALL get_qs_kind_set(qs_kind_set, &
-                                 maxsgf=basis_info%max_sgf, &
-                                 maxnset=basis_info%max_set, &
-                                 maxlgto=basis_info%max_am)
+         basis_type = "ORB"
+         IF (do_admm) &
+            basis_type = "AUX_FIT"
 
-         ELSE
-            CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type="AUX_FIT")
-            CALL get_qs_kind_set(qs_kind_set, &
-                                 maxsgf=basis_info%max_sgf, &
-                                 maxnset=basis_info%max_set, &
-                                 maxlgto=basis_info%max_am, &
-                                 basis_type="AUX_FIT")
-         END IF
+         CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type=basis_type)
+         CALL get_qs_kind_set(qs_kind_set, &
+                              maxsgf=basis_info%max_sgf, &
+                              maxnset=basis_info%max_set, &
+                              maxlgto=basis_info%max_am, &
+                              basis_type=basis_type)
+
          IF (basis_info%max_set < max_set) CPABORT("UNEXPECTED MAX_SET")
          max_set = MAX(max_set, basis_info%max_set)
          CALL get_gto_basis_set(gto_basis_set=orb_basis_a, &
@@ -1585,6 +1579,8 @@ CONTAINS
                                 kind_radius=basis_parameter(ikind)%kind_radius)
       END DO
       DO ikind = 1, nkind
+         ! TODO: the following uses the basis_info%max_am of the last kind from the previous iteration
+         !       to determine the boundaries for nsgfl, is that correct?  Why?
          ALLOCATE (basis_parameter(ikind)%nsgfl(0:basis_info%max_am, max_set))
          basis_parameter(ikind)%nsgfl = 0
          nset = basis_parameter(ikind)%nset
@@ -1639,8 +1635,6 @@ CONTAINS
                s_offset_nl_a = 0
                DO la = la_min(iset), la_max(iset)
                   offset_a = offset_a1 + ncoset(la - 1)
-                  co_counter = 0
-                  co_counter = co_counter + 1
                   so_counter = 0
                   DO k = sgfa + s_offset_nl_a, sgfa + s_offset_nl_a + nso(la)*nl_a(la, iset) - 1
                      DO i = offset_a + 1, offset_a + nco(la)
