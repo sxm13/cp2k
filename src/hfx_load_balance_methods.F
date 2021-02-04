@@ -2325,60 +2325,45 @@ CONTAINS
 !> \param x_data ...
 !> \param iw ...
 !> \param n_threads ...
-!> \param i_thread ...
 !> \param eval_type ...
 ! **************************************************************************************************
-   SUBROUTINE collect_load_balance_info(para_env, x_data, iw, n_threads, i_thread, &
-                                        eval_type)
+   SUBROUTINE collect_load_balance_info(para_env, x_data, iw, n_threads, eval_type)
+      TYPE(cp_para_env_type), INTENT(IN)                 :: para_env
+      TYPE(hfx_type), DIMENSION(:), INTENT(IN)           :: x_data
+      INTEGER, INTENT(IN)                                :: iw, n_threads, eval_type
 
-      TYPE(cp_para_env_type), POINTER                    :: para_env
-      TYPE(hfx_type), POINTER                            :: x_data
-      INTEGER, INTENT(IN)                                :: iw, n_threads, i_thread, eval_type
-
-      INTEGER                                            :: i, j, k, my_rank, nbins, nranks, &
+      INTEGER                                            :: i, i_thread, j, k, nbins, nranks, &
                                                             total_bins
       INTEGER(int_8)                                     :: avg_bin, avg_rank, max_bin, max_rank, &
                                                             min_bin, min_rank, sum_bin, sum_rank
-      INTEGER(int_8), ALLOCATABLE, DIMENSION(:)          :: buffer, buffer_in, buffer_out, summary
-      INTEGER(int_8), ALLOCATABLE, DIMENSION(:), SAVE    :: shm_cost_vector
-      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: bins_per_rank, rdispl, sort_idx
-      INTEGER, ALLOCATABLE, DIMENSION(:), SAVE           :: shm_bins_per_rank, shm_displ
+      INTEGER(int_8), ALLOCATABLE, DIMENSION(:)          :: buffer, buffer_in, buffer_out, &
+                                                            shm_cost_vector, summary
+      INTEGER, ALLOCATABLE, DIMENSION(:)                 :: bins_per_rank, rdispl, &
+                                                            shm_bins_per_rank, shm_displ, sort_idx
 
-      SELECT CASE (eval_type)
-      CASE (hfx_do_eval_energy)
-         nbins = SIZE(x_data%distribution_energy)
-      CASE (hfx_do_eval_forces)
-         nbins = SIZE(x_data%distribution_forces)
-      END SELECT
-
-!$OMP MASTER
-      ALLOCATE (shm_bins_per_rank(n_threads))
-      ALLOCATE (shm_displ(n_threads + 1))
-!$OMP END MASTER
-!$OMP BARRIER
-
-      shm_bins_per_rank(i_thread + 1) = nbins
-!$OMP BARRIER
-      nbins = 0
-      DO i = 1, n_threads
-         nbins = nbins + shm_bins_per_rank(i)
-      END DO
-      my_rank = para_env%mepos
       nranks = para_env%num_pe
 
-!$OMP BARRIER
-!$OMP MASTER
+      ALLOCATE (shm_bins_per_rank(n_threads))
+      ALLOCATE (shm_displ(n_threads + 1))
       ALLOCATE (bins_per_rank(nranks))
-      bins_per_rank = 0
 
-      bins_per_rank(my_rank + 1) = nbins
+      DO i_thread = 1, n_threads
+         SELECT CASE (eval_type)
+         CASE (hfx_do_eval_energy)
+            shm_bins_per_rank(i_thread) = SIZE(x_data(i_thread)%distribution_energy)
+         CASE (hfx_do_eval_forces)
+            shm_bins_per_rank(i_thread) = SIZE(x_data(i_thread)%distribution_forces)
+         END SELECT
+      END DO
+
+      nbins = SUM(shm_bins_per_rank)
+
+      bins_per_rank = 0
+      bins_per_rank(para_env%mepos + 1) = nbins
 
       CALL mp_sum(bins_per_rank, para_env%group)
 
-      total_bins = 0
-      DO i = 1, nranks
-         total_bins = total_bins + bins_per_rank(i)
-      END DO
+      total_bins = SUM(bins_per_rank)
 
       ALLOCATE (shm_cost_vector(2*total_bins))
       shm_cost_vector = -1_int_8
@@ -2387,25 +2372,25 @@ CONTAINS
          shm_displ(i) = shm_displ(i - 1) + shm_bins_per_rank(i - 1)
       END DO
       shm_displ(n_threads + 1) = nbins + 1
-!$OMP END MASTER
-!$OMP BARRIER
-      j = 0
-      SELECT CASE (eval_type)
-      CASE (hfx_do_eval_energy)
-         DO i = shm_displ(i_thread + 1), shm_displ(i_thread + 2) - 1
-            j = j + 1
-            shm_cost_vector(2*(i - 1) + 1) = x_data%distribution_energy(j)%cost
-            shm_cost_vector(2*i) = INT(x_data%distribution_energy(j)%time_first_scf*10000.0_dp, KIND=int_8)
-         END DO
-      CASE (hfx_do_eval_forces)
-         DO i = shm_displ(i_thread + 1), shm_displ(i_thread + 2) - 1
-            j = j + 1
-            shm_cost_vector(2*(i - 1) + 1) = x_data%distribution_forces(j)%cost
-            shm_cost_vector(2*i) = INT(x_data%distribution_forces(j)%time_forces*10000.0_dp, KIND=int_8)
-         END DO
-      END SELECT
-!$OMP BARRIER
-!$OMP MASTER
+
+      DO i_thread = 1, n_threads
+         j = 0
+         SELECT CASE (eval_type)
+         CASE (hfx_do_eval_energy)
+            DO i = shm_displ(i_thread), shm_displ(i_thread + 1) - 1
+               j = j + 1
+               shm_cost_vector(2*(i - 1) + 1) = x_data(i_thread)%distribution_energy(j)%cost
+               shm_cost_vector(2*i) = INT(x_data(i_thread)%distribution_energy(j)%time_first_scf*10000.0_dp, KIND=int_8)
+            END DO
+         CASE (hfx_do_eval_forces)
+            DO i = shm_displ(i_thread), shm_displ(i_thread + 1) - 1
+               j = j + 1
+               shm_cost_vector(2*(i - 1) + 1) = x_data(i_thread)%distribution_forces(j)%cost
+               shm_cost_vector(2*i) = INT(x_data(i_thread)%distribution_forces(j)%time_forces*10000.0_dp, KIND=int_8)
+            END DO
+         END SELECT
+      END DO
+
       ! ** calculate offsets
       ALLOCATE (rdispl(nranks))
       bins_per_rank(:) = bins_per_rank(:)*2
@@ -2425,7 +2410,6 @@ CONTAINS
       CALL mp_gatherv(buffer_in, buffer_out, bins_per_rank, rdispl, para_env%source, para_env%group)
 
       IF (iw > 0) THEN
-
          ALLOCATE (summary(2*nranks))
          summary = 0_int_8
 
@@ -2495,11 +2479,11 @@ CONTAINS
 
          WRITE (iw, FMT="(T3,A,T35,A,T55,A,/)") "MPI RANK", "EST cost", "Processing time [s]"
          DO i = nranks, 1, -1
-       WRITE (iw, FMT="(T6,I5,T27,I16,T55,F19.8)") sort_idx(i) - 1, summary(2*(sort_idx(i) - 1) + 1), REAL(buffer(i), dp)/10000.0_dp
+            WRITE (iw, FMT="(T6,I5,T27,I16,T55,F19.8)") sort_idx(i) - 1, summary(2*(sort_idx(i) - 1) + 1), &
+               REAL(buffer(i), dp)/10000.0_dp
          END DO
 
          DEALLOCATE (summary, buffer, sort_idx)
-
       END IF
 
       DEALLOCATE (buffer_in, buffer_out, rdispl)
@@ -2507,9 +2491,6 @@ CONTAINS
       CALL mp_sync(para_env%group)
 
       DEALLOCATE (shm_bins_per_rank, shm_displ, shm_cost_vector)
-!$OMP END MASTER
-!$OMP BARRIER
-
    END SUBROUTINE collect_load_balance_info
 
 #include "hfx_get_pmax_val.f90"

@@ -330,7 +330,6 @@ CONTAINS
 !$OMP                                  shm_atomic_pair_list,&
 !$OMP                                  shm_pmax_atom,&
 !$OMP                                  use_virial,&
-!$OMP                                  do_print_load_balance_info,&
 !$OMP                                  nkimages,nspins)&
 !$OMP  PRIVATE(actual_x_data,atomic_kind_set,atomic_offset_ac,atomic_offset_ad,atomic_offset_bc,&
 !$OMP  atomic_offset_bd,atom_of_kind,basis_info,&
@@ -1511,29 +1510,6 @@ CONTAINS
 !$OMP END MASTER
       END DO !bin
 
-!$OMP MASTER
-      logger => cp_get_default_logger()
-      do_print_load_balance_info = .FALSE.
-      do_print_load_balance_info = BTEST(cp_print_key_should_output(logger%iter_info, hfx_section, &
-                                                                    "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO"), cp_p_file)
-!$OMP END MASTER
-!$OMP BARRIER
-      IF (do_print_load_balance_info) THEN
-         iw = -1
-!$OMP MASTER
-         iw = cp_print_key_unit_nr(logger, hfx_section, "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO", &
-                                   extension=".scfLog")
-!$OMP END MASTER
-
-         CALL collect_load_balance_info(para_env, actual_x_data, iw, n_threads, i_thread, &
-                                        hfx_do_eval_forces)
-
-!$OMP MASTER
-         CALL cp_print_key_finished_output(iw, logger, hfx_section, &
-                                           "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO")
-!$OMP END MASTER
-      END IF
-
       IF (use_virial) THEN
          DO i = 1, 3
             DO j = 1, 3
@@ -1738,6 +1714,18 @@ CONTAINS
       ! CALL terminate_libderiv(private_deriv)
 
 !$OMP END PARALLEL
+
+      logger => cp_get_default_logger()
+      do_print_load_balance_info = BTEST(cp_print_key_should_output(logger%iter_info, hfx_section, &
+                                                                    "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO"), cp_p_file)
+      IF (do_print_load_balance_info) THEN
+         iw = cp_print_key_unit_nr(logger, hfx_section, "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO", &
+                                   extension=".scfLog")
+
+         CALL collect_load_balance_info(para_env, qs_env%x_data(irep, :), iw, n_threads, hfx_do_eval_forces)
+
+         CALL cp_print_key_finished_output(iw, logger, hfx_section, "LOAD_BALANCE%PRINT/LOAD_BALANCE_INFO")
+      END IF
 
       CALL timestop(handle)
 
