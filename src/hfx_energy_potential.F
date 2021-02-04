@@ -72,8 +72,7 @@ MODULE hfx_energy_potential
    USE kinds,                           ONLY: default_string_length,&
                                               dp,&
                                               int_8
-   USE kpoint_types,                    ONLY: get_kpoint_info,&
-                                              kpoint_type
+   USE kpoint_types,                    ONLY: kpoint_type
    USE libint_wrapper,                  ONLY: cp_libint_t
    USE machine,                         ONLY: m_flush,&
                                               m_memory,&
@@ -161,12 +160,13 @@ CONTAINS
          i_set_list_kl_stop, i_thread, iatom, iatom_block, iatom_end, iatom_start, ikind, img, &
          iset, iw, j, jatom, jatom_block, jatom_end, jatom_start, jkind, jset, katom, katom_block, &
          katom_end
-      INTEGER :: katom_start, kind_kind_idx, kkind, kset, l_max, latom, latom_block, latom_end, &
-         latom_start, lkind, lset, ma, max_pgf, max_set, mb, my_bin_id, my_bin_size, my_thread_id, &
-         n_threads, natom, nbits, ncob, ncos_max, nints, nkimages, nkind, nneighbors, nseta, &
-         nsetb, nsgf_max, pa, sgfb, shm_number_of_p_entries, shm_task_counter, shm_total_bins, &
-         sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, sphi_b_u3, sphi_c_u1, sphi_c_u2, &
-         sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, tmp_i4, unit_id
+      INTEGER :: katom_start, kind_kind_idx, kkind, kp_idx_q, kp_idx_t, kset, l_max, latom, &
+         latom_block, latom_end, latom_start, lkind, lset, ma, max_pgf, max_set, mb, my_bin_id, &
+         my_bin_size, my_thread_id, n_threads, natom, nbidx, nbits, ncob, ncos_max, nints, &
+         nkimages, nkind, nneighbors, nseta, nsetb, nsgf_max, pa, sgfb, shm_number_of_p_entries, &
+         shm_task_counter, shm_total_bins, sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, &
+         sphi_b_u3, sphi_c_u1, sphi_c_u2, sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, &
+         tmp_i4, unit_id
       INTEGER(int_8) :: atom_block, counter, estimate_to_store_int, max_val_memory, &
          mb_size_buffers, mb_size_p, mem_compression_counter, mem_compression_counter_disk, &
          mem_eris, mem_eris_disk, mem_max_val, memsize_after, memsize_before, my_current_counter, &
@@ -181,7 +181,6 @@ CONTAINS
       INTEGER, DIMENSION(:, :), POINTER :: first_sgfb, nsgfl_a, nsgfl_b, nsgfl_c, nsgfl_d, &
          offset_ac_set, offset_ad_set, offset_bc_set, offset_bd_set, shm_atomic_block_offset, &
          shm_is_assoc_atomic_block
-      INTEGER, DIMENSION(:, :, :), POINTER               :: cell_to_index
       INTEGER, DIMENSION(:, :, :, :), POINTER            :: shm_set_offset
       LOGICAL :: bins_left, buffer_overflow, do_disk_storage, do_dynamic_load_balancing, do_it, &
          do_kpoints, do_p_screening, do_p_screening_forces, do_periodic, &
@@ -280,11 +279,10 @@ CONTAINS
                       dft_control=dft_control, &
                       particle_set=particle_set)
 
-      NULLIFY (cell_to_index)
+      NULLIFY (kpoints)
       IF (do_kpoints) THEN
          CALL get_qs_env(qs_env=qs_env, ks_env=ks_env)
          CALL get_ks_env(ks_env=ks_env, kpoints=kpoints)
-         CALL get_kpoint_info(kpoint=kpoints, cell_to_index=cell_to_index)
       END IF
 
       shm_master_x_data => x_data(irep, 1)
@@ -577,7 +575,7 @@ CONTAINS
 !$OMP                                  my_geo_change,&
 !$OMP                                  irep,&
 !$OMP                                  distribute_fock_matrix,&
-!$OMP                                  cell_to_index,&
+!$OMP                                  kpoints,&
 !$OMP                                  dft_control,&
 !$OMP                                  is_unrestricted,&
 !$OMP                                  ncoset,&
@@ -654,7 +652,7 @@ CONTAINS
 !$OMP         sphi_c_ext_set,sphi_d_ext_set,pmax_entry,log10_pmax,current_counter,nints,estimate_to_store_int,&
 !$OMP         spherical_estimate,nbits,buffer_left,buffer_start,buffer_size,max_contraction_val,tmp_r_1,tmp_r_2,&
 !$OMP         tmp_screen_pgf1,tmp_screen_pgf2,cartesian_estimate,bintime_stop,iw,j,tmp_i4,&
-!$OMP         bin,eps_scaling_str,eps_schwarz_min_str) &
+!$OMP         bin,eps_scaling_str,eps_schwarz_min_str,nbidx,kp_idx_q,kp_idx_t) &
 !$OMP REDUCTION(+: shm_neris_total,shm_neris_onthefly,shm_neris_incore,shm_neris_disk,&
 !$OMP              shm_nprim_ints,shm_stor_counter_integrals,shm_stor_count_int_disk,&
 !$OMP              shm_stor_count_max_val,shm_mem_compression_counter) &
@@ -1408,101 +1406,193 @@ CONTAINS
                            shm_neris_onthefly = shm_neris_onthefly + current_counter
                         END IF
 
-                        !! Calculate integrals if we run out of buffer or the geometry did change
-                        IF (my_geo_change .OR. buffer_overflow) THEN
-                           max_contraction_val = max_contraction(iset, iatom)* &
-                                                 max_contraction(jset, jatom)* &
-                                                 max_contraction(kset, katom)* &
-                                                 max_contraction(lset, latom)*pmax_entry
-                           tmp_R_1 => radii_pgf(:, :, jset, iset, jkind, ikind)
-                           tmp_R_2 => radii_pgf(:, :, lset, kset, lkind, kkind)
-                           tmp_screen_pgf1 => screen_coeffs_pgf(:, :, jset, iset, jkind, ikind)
-                           tmp_screen_pgf2 => screen_coeffs_pgf(:, :, lset, kset, lkind, kkind)
+                        DO kp_idx_t = 1, nkimages
+                        DO kp_idx_q = 1, nkimages
 
-                           CALL coulomb4(private_lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
-                                         la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
-                                         lc_min(kset), lc_max(kset), ld_min(lset), ld_max(lset), &
-                                         nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
-                                         sphi_a_u1, sphi_a_u2, sphi_a_u3, &
-                                         sphi_b_u1, sphi_b_u2, sphi_b_u3, &
-                                         sphi_c_u1, sphi_c_u2, sphi_c_u3, &
-                                         sphi_d_u1, sphi_d_u2, sphi_d_u3, &
-                                         zeta(1:npgfa(iset), iset), zetb(1:npgfb(jset), jset), &
-                                         zetc(1:npgfc(kset), kset), zetd(1:npgfd(lset), lset), &
-                                         primitive_integrals, &
-                                         potential_parameter, &
-                                         actual_x_data%neighbor_cells, screen_coeffs_set(jset, iset, jkind, ikind)%x, &
-                                         screen_coeffs_set(lset, kset, lkind, kkind)%x, eps_schwarz, &
-                                         max_contraction_val, cartesian_estimate, cell, neris_coulomb, &
-                                         log10_pmax, log10_eps_schwarz, &
-                                         tmp_R_1, tmp_R_2, tmp_screen_pgf1, tmp_screen_pgf2, &
-                                         pgf_list_ij, pgf_list_kl, pgf_product_list, &
-                                         nsgfl_a(:, iset), nsgfl_b(:, jset), &
-                                         nsgfl_c(:, kset), nsgfl_d(:, lset), &
-                                         sphi_a_ext_set, &
-                                         sphi_b_ext_set, &
-                                         sphi_c_ext_set, &
-                                         sphi_d_ext_set, &
-                                         ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
-                                         do_periodic)
+                           !! Calculate integrals if we run out of buffer or the geometry did change
+                           IF (my_geo_change .OR. buffer_overflow) THEN
+                              max_contraction_val = max_contraction(iset, iatom)* &
+                                                    max_contraction(jset, jatom)* &
+                                                    max_contraction(kset, katom)* &
+                                                    max_contraction(lset, latom)*pmax_entry
+                              tmp_R_1 => radii_pgf(:, :, jset, iset, jkind, ikind)
+                              tmp_R_2 => radii_pgf(:, :, lset, kset, lkind, kkind)
+                              tmp_screen_pgf1 => screen_coeffs_pgf(:, :, jset, iset, jkind, ikind)
+                              tmp_screen_pgf2 => screen_coeffs_pgf(:, :, lset, kset, lkind, kkind)
 
-                           nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
-                           shm_neris_total = shm_neris_total + nints
-                           shm_nprim_ints = shm_nprim_ints + neris_coulomb
+                              IF (ASSOCIATED(kpoints)) THEN
+                                 CALL coulomb4(private_lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
+                                               la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
+                                               lc_min(kset), lc_max(kset), ld_min(lset), ld_max(lset), &
+                                               nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
+                                               sphi_a_u1, sphi_a_u2, sphi_a_u3, &
+                                               sphi_b_u1, sphi_b_u2, sphi_b_u3, &
+                                               sphi_c_u1, sphi_c_u2, sphi_c_u3, &
+                                               sphi_d_u1, sphi_d_u2, sphi_d_u3, &
+                                               zeta(1:npgfa(iset), iset), zetb(1:npgfb(jset), jset), &
+                                               zetc(1:npgfc(kset), kset), zetd(1:npgfd(lset), lset), &
+                                               primitive_integrals, &
+                                               potential_parameter, &
+                                               actual_x_data%neighbor_cells, screen_coeffs_set(jset, iset, jkind, ikind)%x, &
+                                               screen_coeffs_set(lset, kset, lkind, kkind)%x, eps_schwarz, &
+                                               max_contraction_val, cartesian_estimate, cell, neris_coulomb, &
+                                               log10_pmax, log10_eps_schwarz, &
+                                               tmp_R_1, tmp_R_2, tmp_screen_pgf1, tmp_screen_pgf2, &
+                                               pgf_list_ij, pgf_list_kl, pgf_product_list, &
+                                               nsgfl_a(:, iset), nsgfl_b(:, jset), &
+                                               nsgfl_c(:, kset), nsgfl_d(:, lset), &
+                                               sphi_a_ext_set, &
+                                               sphi_b_ext_set, &
+                                               sphi_c_ext_set, &
+                                               sphi_d_ext_set, &
+                                               ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
+                                               do_periodic, &
+                                               kpoints, &
+                                               kpoints%index_to_cell(:, kp_idx_q), &
+                                               kpoints%index_to_cell(:, kp_idx_t))
+                              ELSE
+                                 CALL coulomb4(private_lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
+                                               la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
+                                               lc_min(kset), lc_max(kset), ld_min(lset), ld_max(lset), &
+                                               nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
+                                               sphi_a_u1, sphi_a_u2, sphi_a_u3, &
+                                               sphi_b_u1, sphi_b_u2, sphi_b_u3, &
+                                               sphi_c_u1, sphi_c_u2, sphi_c_u3, &
+                                               sphi_d_u1, sphi_d_u2, sphi_d_u3, &
+                                               zeta(1:npgfa(iset), iset), zetb(1:npgfb(jset), jset), &
+                                               zetc(1:npgfc(kset), kset), zetd(1:npgfd(lset), lset), &
+                                               primitive_integrals, &
+                                               potential_parameter, &
+                                               actual_x_data%neighbor_cells, screen_coeffs_set(jset, iset, jkind, ikind)%x, &
+                                               screen_coeffs_set(lset, kset, lkind, kkind)%x, eps_schwarz, &
+                                               max_contraction_val, cartesian_estimate, cell, neris_coulomb, &
+                                               log10_pmax, log10_eps_schwarz, &
+                                               tmp_R_1, tmp_R_2, tmp_screen_pgf1, tmp_screen_pgf2, &
+                                               pgf_list_ij, pgf_list_kl, pgf_product_list, &
+                                               nsgfl_a(:, iset), nsgfl_b(:, jset), &
+                                               nsgfl_c(:, kset), nsgfl_d(:, lset), &
+                                               sphi_a_ext_set, &
+                                               sphi_b_ext_set, &
+                                               sphi_c_ext_set, &
+                                               sphi_d_ext_set, &
+                                               ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
+                                               do_periodic)
+                              END IF
 
-                           !! Compress the array for storage
-                           spherical_estimate = TINY(spherical_estimate)
-                           DO i = 1, nints
-                              spherical_estimate = MAX(spherical_estimate, ABS(primitive_integrals(i)))
-                           END DO
+                              nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
+                              shm_neris_total = shm_neris_total + nints
+                              shm_nprim_ints = shm_nprim_ints + neris_coulomb
 
-                           estimate_to_store_int = EXPONENT(spherical_estimate)
-                           estimate_to_store_int = MAX(estimate_to_store_int, -15_int_8)
+                              !! Compress the array for storage
+                              spherical_estimate = TINY(spherical_estimate)
+                              DO i = 1, nints
+                                 spherical_estimate = MAX(spherical_estimate, ABS(primitive_integrals(i)))
+                              END DO
 
-                           IF (.NOT. buffer_overflow .AND. my_geo_change) THEN
+                              estimate_to_store_int = EXPONENT(spherical_estimate)
+                              estimate_to_store_int = MAX(estimate_to_store_int, -15_int_8)
+
+                              IF (.NOT. buffer_overflow .AND. my_geo_change) THEN
+                                 IF (.NOT. use_disk_storage) THEN
+                                    CALL hfx_add_single_cache_element( &
+                                       estimate_to_store_int, 6, &
+                                       maxval_cache, maxval_container, memory_parameter%actual_memory_usage, &
+                                       use_disk_storage, max_val_memory)
+                                 ELSE
+                                    CALL hfx_add_single_cache_element( &
+                                       estimate_to_store_int, 6, &
+                                       maxval_cache_disk, maxval_container_disk, memory_parameter%actual_memory_usage_disk, &
+                                       use_disk_storage)
+                                 END IF
+                              END IF
+                              spherical_estimate = SET_EXPONENT(1.0_dp, estimate_to_store_int + 1)
+                              IF (spherical_estimate*pmax_entry < eps_schwarz) CYCLE
+                              IF (.NOT. buffer_overflow) THEN
+                                 nbits = EXPONENT(ANINT(spherical_estimate*pmax_entry/eps_storage)) + 1
+
+                                 ! In case of a tight eps_storage threshold the number of significant
+                                 ! bits in the integer number NINT(value*pmax_entry/eps_storage) may
+                                 ! exceed the width of the storage element. As the compression algorithm
+                                 ! is designed for IEEE 754 double precision numbers, a 64-bit signed
+                                 ! integer variable which is used to store the result of this float-to-
+                                 ! integer conversion (we have no wish to use more memory for storing
+                                 ! compressed ERIs than it is needed for uncompressed ERIs) may overflow.
+                                 ! Abort with a meaningful message when it happens.
+                                 !
+                                 ! The magic number 63 stands for the number of magnitude bits
+                                 ! (64 bits minus one sign bit).
+                                 IF (nbits > 63) THEN
+                                    WRITE (eps_schwarz_min_str, '(ES10.3E2)') &
+                                       spherical_estimate*pmax_entry/ &
+                                       (SET_EXPONENT(1.0_dp, 63)*memory_parameter%eps_storage_scaling)
+
+                                    WRITE (eps_scaling_str, '(ES10.3E2)') &
+                                       spherical_estimate*pmax_entry/(SET_EXPONENT(1.0_dp, 63)*eps_schwarz)
+
+                                    CALL cp_abort(__LOCATION__, &
+                                                  "Overflow during ERI's compression. Please use a larger "// &
+                                                  "EPS_SCHWARZ threshold (above "//TRIM(ADJUSTL(eps_schwarz_min_str))// &
+                                                  ") or increase the EPS_STORAGE_SCALING factor above "// &
+                                                  TRIM(ADJUSTL(eps_scaling_str))//".")
+                                 END IF
+
+                                 buffer_left = nints
+                                 buffer_start = 1
+                                 IF (.NOT. use_disk_storage) THEN
+                                    shm_neris_incore = shm_neris_incore + INT(nints, int_8)
+                                 ELSE
+                                    shm_neris_disk = shm_neris_disk + INT(nints, int_8)
+                                 END IF
+                                 DO WHILE (buffer_left > 0)
+                                    buffer_size = MIN(buffer_left, CACHE_SIZE)
+                                    IF (.NOT. use_disk_storage) THEN
+                                       CALL hfx_add_mult_cache_elements(primitive_integrals(buffer_start), &
+                                                                        buffer_size, nbits, &
+                                                                        integral_caches(nbits), &
+                                                                        integral_containers(nbits), &
+                                                                        eps_storage, pmax_entry, &
+                                                                        memory_parameter%actual_memory_usage, &
+                                                                        use_disk_storage)
+                                    ELSE
+                                       CALL hfx_add_mult_cache_elements(primitive_integrals(buffer_start), &
+                                                                        buffer_size, nbits, &
+                                                                        integral_caches_disk(nbits), &
+                                                                        integral_containers_disk(nbits), &
+                                                                        eps_storage, pmax_entry, &
+                                                                        memory_parameter%actual_memory_usage_disk, &
+                                                                        use_disk_storage)
+                                    END IF
+                                    buffer_left = buffer_left - buffer_size
+                                    buffer_start = buffer_start + buffer_size
+                                 END DO
+                              ELSE
+                                 !! In order to be consistent with in-core part, round all the eris wrt. eps_schwarz
+                                 DO i = 1, nints
+                                    primitive_integrals(i) = primitive_integrals(i)*pmax_entry
+                                    IF (ABS(primitive_integrals(i)) > eps_storage) THEN
+                                       primitive_integrals(i) = ANINT(primitive_integrals(i)/eps_storage, dp)*eps_storage/pmax_entry
+                                    ELSE
+                                       primitive_integrals(i) = 0.0_dp
+                                    END IF
+                                 END DO
+                              END IF
+
+                           ELSE  !! Get integrals from buffer instead of calculating them:
+                              nints = current_counter
                               IF (.NOT. use_disk_storage) THEN
-                                 CALL hfx_add_single_cache_element( &
+                                 CALL hfx_get_single_cache_element( &
                                     estimate_to_store_int, 6, &
                                     maxval_cache, maxval_container, memory_parameter%actual_memory_usage, &
-                                    use_disk_storage, max_val_memory)
+                                    use_disk_storage)
                               ELSE
-                                 CALL hfx_add_single_cache_element( &
+                                 CALL hfx_get_single_cache_element( &
                                     estimate_to_store_int, 6, &
                                     maxval_cache_disk, maxval_container_disk, memory_parameter%actual_memory_usage_disk, &
                                     use_disk_storage)
                               END IF
-                           END IF
-                           spherical_estimate = SET_EXPONENT(1.0_dp, estimate_to_store_int + 1)
-                           IF (spherical_estimate*pmax_entry < eps_schwarz) CYCLE
-                           IF (.NOT. buffer_overflow) THEN
+                              spherical_estimate = SET_EXPONENT(1.0_dp, estimate_to_store_int + 1)
+                              IF (spherical_estimate*pmax_entry < eps_schwarz) CYCLE
                               nbits = EXPONENT(ANINT(spherical_estimate*pmax_entry/eps_storage)) + 1
-
-                              ! In case of a tight eps_storage threshold the number of significant
-                              ! bits in the integer number NINT(value*pmax_entry/eps_storage) may
-                              ! exceed the width of the storage element. As the compression algorithm
-                              ! is designed for IEEE 754 double precision numbers, a 64-bit signed
-                              ! integer variable which is used to store the result of this float-to-
-                              ! integer conversion (we have no wish to use more memory for storing
-                              ! compressed ERIs than it is needed for uncompressed ERIs) may overflow.
-                              ! Abort with a meaningful message when it happens.
-                              !
-                              ! The magic number 63 stands for the number of magnitude bits
-                              ! (64 bits minus one sign bit).
-                              IF (nbits > 63) THEN
-                                 WRITE (eps_schwarz_min_str, '(ES10.3E2)') &
-                                    spherical_estimate*pmax_entry/ &
-                                    (SET_EXPONENT(1.0_dp, 63)*memory_parameter%eps_storage_scaling)
-
-                                 WRITE (eps_scaling_str, '(ES10.3E2)') &
-                                    spherical_estimate*pmax_entry/(SET_EXPONENT(1.0_dp, 63)*eps_schwarz)
-
-                                 CALL cp_abort(__LOCATION__, &
-                                               "Overflow during ERI's compression. Please use a larger "// &
-                                               "EPS_SCHWARZ threshold (above "//TRIM(ADJUSTL(eps_schwarz_min_str))// &
-                                               ") or increase the EPS_STORAGE_SCALING factor above "// &
-                                               TRIM(ADJUSTL(eps_scaling_str))//".")
-                              END IF
-
                               buffer_left = nints
                               buffer_start = 1
                               IF (.NOT. use_disk_storage) THEN
@@ -1511,9 +1601,9 @@ CONTAINS
                                  shm_neris_disk = shm_neris_disk + INT(nints, int_8)
                               END IF
                               DO WHILE (buffer_left > 0)
-                                 buffer_size = MIN(buffer_left, CACHE_SIZE)
+                                 buffer_size = MIN(buffer_left, cache_size)
                                  IF (.NOT. use_disk_storage) THEN
-                                    CALL hfx_add_mult_cache_elements(primitive_integrals(buffer_start), &
+                                    CALL hfx_get_mult_cache_elements(primitive_integrals(buffer_start), &
                                                                      buffer_size, nbits, &
                                                                      integral_caches(nbits), &
                                                                      integral_containers(nbits), &
@@ -1521,7 +1611,7 @@ CONTAINS
                                                                      memory_parameter%actual_memory_usage, &
                                                                      use_disk_storage)
                                  ELSE
-                                    CALL hfx_add_mult_cache_elements(primitive_integrals(buffer_start), &
+                                    CALL hfx_get_mult_cache_elements(primitive_integrals(buffer_start), &
                                                                      buffer_size, nbits, &
                                                                      integral_caches_disk(nbits), &
                                                                      integral_containers_disk(nbits), &
@@ -1532,109 +1622,54 @@ CONTAINS
                                  buffer_left = buffer_left - buffer_size
                                  buffer_start = buffer_start + buffer_size
                               END DO
-                           ELSE
-                              !! In order to be consistent with in-core part, round all the eris wrt. eps_schwarz
-                              DO i = 1, nints
-                                 primitive_integrals(i) = primitive_integrals(i)*pmax_entry
-                                 IF (ABS(primitive_integrals(i)) > eps_storage) THEN
-                                    primitive_integrals(i) = ANINT(primitive_integrals(i)/eps_storage, dp)*eps_storage/pmax_entry
-                                 ELSE
-                                    primitive_integrals(i) = 0.0_dp
-                                 END IF
-                              END DO
                            END IF
 
-                        ELSE  !! Get integrals from buffer instead of calculating them:
-                           nints = current_counter
-                           IF (.NOT. use_disk_storage) THEN
-                              CALL hfx_get_single_cache_element( &
-                                 estimate_to_store_int, 6, &
-                                 maxval_cache, maxval_container, memory_parameter%actual_memory_usage, &
-                                 use_disk_storage)
-                           ELSE
-                              CALL hfx_get_single_cache_element( &
-                                 estimate_to_store_int, 6, &
-                                 maxval_cache_disk, maxval_container_disk, memory_parameter%actual_memory_usage_disk, &
-                                 use_disk_storage)
-                           END IF
-                           spherical_estimate = SET_EXPONENT(1.0_dp, estimate_to_store_int + 1)
-                           IF (spherical_estimate*pmax_entry < eps_schwarz) CYCLE
-                           nbits = EXPONENT(ANINT(spherical_estimate*pmax_entry/eps_storage)) + 1
-                           buffer_left = nints
-                           buffer_start = 1
-                           IF (.NOT. use_disk_storage) THEN
-                              shm_neris_incore = shm_neris_incore + INT(nints, int_8)
-                           ELSE
-                              shm_neris_disk = shm_neris_disk + INT(nints, int_8)
-                           END IF
-                           DO WHILE (buffer_left > 0)
-                              buffer_size = MIN(buffer_left, cache_size)
-                              IF (.NOT. use_disk_storage) THEN
-                                 CALL hfx_get_mult_cache_elements(primitive_integrals(buffer_start), &
-                                                                  buffer_size, nbits, &
-                                                                  integral_caches(nbits), &
-                                                                  integral_containers(nbits), &
-                                                                  eps_storage, pmax_entry, &
-                                                                  memory_parameter%actual_memory_usage, &
-                                                                  use_disk_storage)
-                              ELSE
-                                 CALL hfx_get_mult_cache_elements(primitive_integrals(buffer_start), &
-                                                                  buffer_size, nbits, &
-                                                                  integral_caches_disk(nbits), &
-                                                                  integral_containers_disk(nbits), &
-                                                                  eps_storage, pmax_entry, &
-                                                                  memory_parameter%actual_memory_usage_disk, &
-                                                                  use_disk_storage)
-                              END IF
-                              buffer_left = buffer_left - buffer_size
-                              buffer_start = buffer_start + buffer_size
-                           END DO
-                        END IF
+                           !!!  DEBUG, print out primitive integrals and indices. Only works serial no OMP  !!!
+                           IF (.FALSE.) THEN
+                              CALL print_integrals( &
+                                 iatom, jatom, katom, latom, shm_set_offset, shm_atomic_block_offset, &
+                                 iset, jset, kset, lset, nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), primitive_integrals)
+                           ENDIF
 
-                        !!!  DEBUG, print out primitive integrals and indices. Only works serial no OMP  !!!
-                        IF (.FALSE.) THEN
-                           CALL print_integrals( &
-                              iatom, jatom, katom, latom, shm_set_offset, shm_atomic_block_offset, &
-                              iset, jset, kset, lset, nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), primitive_integrals)
-                        ENDIF
-
-                        IF (.NOT. is_anti_symmetric) THEN
-                           !! Update Kohn-Sham matrix
-                           CALL update_fock_matrix( &
-                              nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
-                              fac, symm_fac, full_density_alpha(:, 1), full_ks_alpha(:, 1), &
-                              primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
-                              kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
-                              iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
-                              atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
-                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+                           IF (.NOT. is_anti_symmetric) THEN
+                              !! Update Kohn-Sham matrix
                               CALL update_fock_matrix( &
                                  nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
-                                 fac, symm_fac, full_density_beta(:, 1), full_ks_beta(:, 1), &
+                                 fac, symm_fac, full_density_alpha(:, kp_idx_q), full_ks_alpha(:, kp_idx_t), &
                                  primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
                                  kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
                                  iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
                                  atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
-                           END IF
-                        ELSE
-                           !! Update Kohn-Sham matrix
-                           CALL update_fock_matrix_as( &
-                              nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
-                              fac, symm_fac, full_density_alpha(:, 1), full_ks_alpha(:, 1), &
-                              primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
-                              kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
-                              iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
-                              atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
-                           IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+                              IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+                                 CALL update_fock_matrix( &
+                                    nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
+                                    fac, symm_fac, full_density_beta(:, kp_idx_q), full_ks_beta(:, kp_idx_t), &
+                                    primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
+                                    kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
+                                    iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
+                                    atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
+                              END IF
+                           ELSE
+                              !! Update Kohn-Sham matrix
                               CALL update_fock_matrix_as( &
                                  nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
-                                 fac, symm_fac, full_density_beta(:, 1), full_ks_beta(:, 1), &
+                                 fac, symm_fac, full_density_alpha(:, kp_idx_q), full_ks_alpha(:, kp_idx_t), &
                                  primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
                                  kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
                                  iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
                                  atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
+                              IF (is_unrestricted .AND. .NOT. treat_lsd_in_core) THEN
+                                 CALL update_fock_matrix_as( &
+                                    nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
+                                    fac, symm_fac, full_density_beta(:, kp_idx_q), full_ks_beta(:, kp_idx_t), &
+                                    primitive_integrals, pbd_buf, pbc_buf, pad_buf, pac_buf, kbd_buf, &
+                                    kbc_buf, kad_buf, kac_buf, iatom, jatom, katom, latom, &
+                                    iset, jset, kset, lset, offset_bd_set, offset_bc_set, offset_ad_set, offset_ac_set, &
+                                    atomic_offset_bd, atomic_offset_bc, atomic_offset_ad, atomic_offset_ac)
+                              END IF
                            END IF
-                        END IF
+                        END DO ! kp_idx_q
+                        END DO ! kp_idx_t
                      END DO ! i_set_list_kl
                   END DO ! i_set_list_ij
                   IF (do_disk_storage) THEN
@@ -2104,6 +2139,9 @@ CONTAINS
 !> \param ee_buffer2 ...
 !> \param ee_primitives_tmp ...
 !> \param do_periodic ...
+!> \param kpoints ...
+!> \param qcell ...
+!> \param tcell ...
 !> \par History
 !>      11.2006 created [Manuel Guidon]
 !>      02.2009 completely rewritten screening part [Manuel Guidon]
@@ -2128,7 +2166,8 @@ CONTAINS
                        nsgfl_d, &
                        sphi_a_ext, sphi_b_ext, sphi_c_ext, sphi_d_ext, &
                        ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp, &
-                       do_periodic)
+                       do_periodic, &
+                       kpoints, qcell, tcell)
 
       TYPE(cp_libint_t)                                  :: lib
       REAL(dp), INTENT(IN)                               :: ra(3), rb(3), rc(3), rd(3)
@@ -2163,6 +2202,8 @@ CONTAINS
       REAL(dp), DIMENSION(:), INTENT(INOUT)              :: ee_work, ee_work2, ee_buffer1, &
                                                             ee_buffer2, ee_primitives_tmp
       LOGICAL, INTENT(IN)                                :: do_periodic
+      TYPE(kpoint_type), INTENT(IN), OPTIONAL            :: kpoints
+      INTEGER, INTENT(IN), OPTIONAL                      :: qcell(3), tcell(3)
 
       INTEGER :: ipgf, jpgf, kpgf, la, lb, lc, ld, list_ij, list_kl, lpgf, max_l, ncoa, ncob, &
          ncoc, ncod, nelements_ij, nelements_kl, nproducts, nsgfla, nsgflb, nsgflc, nsgfld, nsoa, &
@@ -2194,7 +2235,7 @@ CONTAINS
 
             CALL build_pgf_product_list(pgf_list_ij(list_ij), pgf_list_kl(list_kl), pgf_product_list, &
                                         nproducts, log10_pmax, log10_eps_schwarz, neighbor_cells, cell, &
-                                        potential_parameter, max_l, do_periodic)
+                                        potential_parameter, max_l, do_periodic, kpoints, qcell, tcell)
 
             s_offset_a = 0
             DO la = la_min, la_max

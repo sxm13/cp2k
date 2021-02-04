@@ -24,6 +24,8 @@ MODULE hfx_pair_list_methods
         do_potential_long, do_potential_mix_cl, do_potential_mix_cl_trunc, do_potential_mix_lg, &
         do_potential_short, do_potential_truncated
    USE kinds,                           ONLY: dp
+   USE kpoint_types,                    ONLY: kpoint_cell_to_index,&
+                                              kpoint_type
    USE libint_wrapper,                  ONLY: prim_data_f_size
    USE mathconstants,                   ONLY: pi
    USE mp2_types,                       ONLY: pair_list_type_mp2
@@ -62,10 +64,14 @@ CONTAINS
 !> \param potential_parameter potential/metric to be used
 !> \param m_max ...
 !> \param do_periodic ...
+!> \param kpoints ...
+!> \param qcell ...
+!> \param tcell ...
 ! **************************************************************************************************
    SUBROUTINE build_pgf_product_list(list1, list2, product_list, nproducts, &
                                      log10_pmax, log10_eps_schwarz, neighbor_cells, &
-                                     cell, potential_parameter, m_max, do_periodic)
+                                     cell, potential_parameter, m_max, do_periodic, &
+                                     kpoints, qcell, tcell)
 
       TYPE(hfx_pgf_list), INTENT(IN)                     :: list1, list2
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
@@ -78,8 +84,11 @@ CONTAINS
       TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
       INTEGER, INTENT(IN)                                :: m_max
       LOGICAL, INTENT(IN)                                :: do_periodic
+      TYPE(kpoint_type), INTENT(IN), OPTIONAL            :: kpoints
+      INTEGER, INTENT(IN), OPTIONAL                      :: qcell(3), tcell(3)
 
-      INTEGER                                            :: i, j, k, l, nimages1, nimages2, tmp_i4
+      INTEGER                                            :: cell_sqt(3), i, j, k, l, nimages1, &
+                                                            nimages2, tmp_i4
       LOGICAL                                            :: use_gamma
       REAL(dp) :: den, Eta, EtaInv, factor, Fm(prim_data_f_size), G(3), im_rc(3), im_rd(3), num, &
          omega2, omega_corr, omega_corr2, P(3), pgf_max_1, pgf_max_2, PQ(3), Q(3), R, R1, R2, &
@@ -105,6 +114,14 @@ CONTAINS
          ra = list1%image_list(i)%ra
          rb = list1%image_list(i)%rb
          DO j = 1, nimages2
+            IF (PRESENT(kpoints)) THEN
+               ! the rhs pair list gets shifted by T, so we need the S+Q-T image here
+               cell_sqt = list1%image_list(i)%bcell + qcell - tcell
+               ! verify that this cell exists in the KP image list and matches the one from this iteration
+               IF (kpoint_cell_to_index(kpoints, cell_sqt) == 0 .OR. ANY(cell_sqt /= list2%image_list(j)%bcell)) &
+                  CYCLE
+            END IF
+
             pgf_max_2 = list2%image_list(j)%pgf_max
             IF (pgf_max_1 + pgf_max_2 + log10_pmax < log10_eps_schwarz) CYCLE
             Q = list2%image_list(j)%P
@@ -128,6 +145,12 @@ CONTAINS
             END IF
 
             DO k = 1, SIZE(neighbor_cells)
+               IF (PRESENT(kpoints)) THEN
+                  ! also here we only need the image for the given Fock matrix
+                  IF (ANY(neighbor_cells(k)%cell /= tcell)) &
+                     CYCLE
+               END IF
+
                IF (do_periodic) THEN
                   im_rc = rc + shift + neighbor_cells(k)%cell_r(:)
                   im_rd = rd + shift + neighbor_cells(k)%cell_r(:)
@@ -403,11 +426,11 @@ CONTAINS
                   pair%ra = ra
                   pair%rb = im_B
                   pair%rab2 = rab2
+                  pair%bcell = neighbor_cells(i)%cell ! remember the coords of the neighbor_cell for this pair
 
                   pair%S1234 = (-Zeta_A*Zeta_B*ZetaInv*rab2)
                   pair%P = (Zeta_A*ra + Zeta_B*im_B)*ZetaInv
                   pair%R = MAX(0.0_dp, R_pgf(jpgf, ipgf)%x(1)*rab2 + R_pgf(jpgf, ipgf)%x(2))
-                  pair%bcell = neighbor_cells(i)%cell
                END ASSOCIATE
             END DO
          END DO

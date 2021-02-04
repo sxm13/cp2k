@@ -204,7 +204,7 @@ MODULE hfx_types
 
 ! **************************************************************************************************
    TYPE hfx_cell_type
-      REAL(dp)                                 :: cell(3)
+      INTEGER                                  :: cell(3)
       REAL(dp)                                 :: cell_r(3)
    END TYPE
 
@@ -313,7 +313,7 @@ MODULE hfx_types
       REAL(dp)                                 :: P(3)
       REAL(dp)                                 :: R
       REAL(dp)                                 :: pgf_max
-      REAL(dp), DIMENSION(3)                   :: bcell
+      INTEGER                                  :: bcell(3)
    END TYPE
 
 ! **************************************************************************************************
@@ -2001,7 +2001,7 @@ CONTAINS
          ub = 1
          DEALLOCATE (x_data%neighbor_cells)
          ALLOCATE (x_data%neighbor_cells(1))
-         x_data%neighbor_cells(1)%cell = 0.0_dp
+         x_data%neighbor_cells(1)%cell = 0
          x_data%neighbor_cells(1)%cell_r = 0.0_dp
 
          ! ** What follows is kind of a ray tracing algorithm
@@ -2048,7 +2048,7 @@ CONTAINS
 
             x_data%neighbor_cells(1:ub - 1) = tmp_neighbor_cells(1:ub - 1)
             DO i = ub, ub_max
-               x_data%neighbor_cells(i)%cell = 0.0_dp
+               x_data%neighbor_cells(i)%cell = 0
                x_data%neighbor_cells(i)%cell_r = 0.0_dp
             END DO
 
@@ -2178,7 +2178,7 @@ CONTAINS
                   image_cell_found = .TRUE.
                END IF
                IF (dist_min < R_max) THEN
-                  x_data%neighbor_cells(ub)%cell = REAL((/ishell, jshell, kshell/), dp)
+                  x_data%neighbor_cells(ub)%cell = [ishell, jshell, kshell]
                   ub = ub + 1
                   image_cell_found = .TRUE.
                END IF
@@ -2199,7 +2199,7 @@ CONTAINS
          ! If we only need the supercell, ignore tmp_neighbor_cells
          IF (ub == 1) THEN
             ALLOCATE (x_data%neighbor_cells(1))
-            x_data%neighbor_cells(1)%cell = 0.0_dp
+            x_data%neighbor_cells(1)%cell = 0
             x_data%neighbor_cells(1)%cell_r = 0.0_dp
          ELSE
             ALLOCATE (x_data%neighbor_cells(ub - 1))
@@ -2231,7 +2231,7 @@ CONTAINS
             m = 0
             i = 1
             DO WHILE (SUM(m**2) <= x_data%periodic_parameter%number_of_shells)
-               x_data%neighbor_cells(i)%cell = REAL(m, dp)
+               x_data%neighbor_cells(i)%cell = m
                CALL next_image_cell_perd(m, x_data%periodic_parameter%perd)
                i = i + 1
             ENDDO
@@ -2250,7 +2250,7 @@ CONTAINS
          m = 0
          i = 1
          DO WHILE (SUM(m**2) <= pbc_shells)
-            x_data%neighbor_cells(i)%cell = REAL(m, dp)
+            x_data%neighbor_cells(i)%cell = m
             CALL next_image_cell_perd(m, x_data%periodic_parameter%perd)
             i = i + 1
          ENDDO
@@ -2259,7 +2259,7 @@ CONTAINS
       ! ** Transform into real coord
       DO i = 1, SIZE(x_data%neighbor_cells)
          x_data%neighbor_cells(i)%cell_r(:) = 0.0_dp
-         s = x_data%neighbor_cells(i)%cell(:)
+         s = REAL(x_data%neighbor_cells(i)%cell, KIND=dp)
          CALL scaled_to_real(x_data%neighbor_cells(i)%cell_r, s, cell)
       END DO
       x_data%periodic_parameter%number_of_shells = pbc_shells
