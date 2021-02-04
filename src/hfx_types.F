@@ -595,7 +595,7 @@ CONTAINS
       CHARACTER(LEN=512)                                 :: error_msg
       CHARACTER(LEN=default_path_length)                 :: char_val
       INTEGER :: handle, i, i_thread, iatom, ikind, int_val, irep, jkind, max_set, n_rep_hf, &
-         n_threads, natom, natom_a, natom_b, nkind, nseta, nsetb, pbc_shells, storage_id
+         n_threads, natom, natom_a, natom_b, nkind, nseta, nsetb, storage_id
       INTEGER, DIMENSION(:), POINTER                     :: atom2kind, kind_of
       LOGICAL                                            :: do_ri, logic_val, my_do_exx
       REAL(dp)                                           :: real_val
@@ -836,10 +836,10 @@ CONTAINS
 
             IF (actual_x_data%periodic_parameter%do_periodic) THEN
                hf_pbc_section => section_vals_get_subs_vals(hfx_section, "PERIODIC", i_rep_section=irep)
-               CALL section_vals_val_get(hf_pbc_section, "NUMBER_OF_SHELLS", i_val=pbc_shells)
-               actual_x_data%periodic_parameter%number_of_shells_from_input = pbc_shells
+               CALL section_vals_val_get(hf_pbc_section, "NUMBER_OF_SHELLS", &
+                                         i_val=actual_x_data%periodic_parameter%number_of_shells_from_input)
                ALLOCATE (actual_x_data%neighbor_cells(1))
-               CALL hfx_create_neighbor_cells(actual_x_data, pbc_shells, cell, i_thread)
+               CALL hfx_create_neighbor_cells(actual_x_data, cell, i_thread == 1)
             ELSE
                ALLOCATE (actual_x_data%neighbor_cells(1))
                ! ** Initialize this guy to enable non periodic stress regtests
@@ -1923,23 +1923,21 @@ CONTAINS
 !> \brief - This routine computes the neighbor cells that are taken into account
 !>        in periodic runs
 !> \param x_data contains all relevant data structures for hfx runs
-!> \param pbc_shells number of shells taken into account
 !> \param cell cell
-!> \param i_thread current thread ID
+!> \param do_checks whether to run some checks (usually only to be done on one thread)
 !> \par History
 !>      09.2007 created [Manuel Guidon]
 !> \author Manuel Guidon
 ! **************************************************************************************************
-   SUBROUTINE hfx_create_neighbor_cells(x_data, pbc_shells, cell, i_thread)
-      TYPE(hfx_type), POINTER                            :: x_data
-      INTEGER, INTENT(INOUT)                             :: pbc_shells
-      TYPE(cell_type), POINTER                           :: cell
-      INTEGER, INTENT(IN)                                :: i_thread
+   SUBROUTINE hfx_create_neighbor_cells(x_data, cell, do_checks)
+      TYPE(hfx_type), INTENT(INOUT)                      :: x_data
+      TYPE(cell_type), INTENT(IN)                        :: cell
+      LOGICAL, INTENT(IN)                                :: do_checks
 
       CHARACTER(LEN=512)                                 :: error_msg
       CHARACTER(LEN=64)                                  :: char_nshells
       INTEGER :: i, idx, ikind, ipgf, iset, ishell, j, jkind, jpgf, jset, jshell, k, kshell, l, &
-         m(3), max_shell, nseta, nsetb, total_number_of_cells, ub, ub_max
+         m(3), max_shell, nseta, nsetb, pbc_shells, total_number_of_cells, ub, ub_max
       INTEGER, DIMENSION(:), POINTER                     :: la_max, lb_max, npgfa, npgfb
       LOGICAL                                            :: image_cell_found, nothing_more_to_add
       REAL(dp) :: cross_product(3), dist_min, distance(14), l_min, normal(3, 6), P(3, 14), &
@@ -1947,8 +1945,10 @@ CONTAINS
       REAL(dp), DIMENSION(:, :), POINTER                 :: zeta, zetb
       TYPE(hfx_cell_type), DIMENSION(:), POINTER         :: tmp_neighbor_cells
 
+      pbc_shells = x_data%periodic_parameter%number_of_shells_from_input
+
       ! ** Check some settings
-      IF (i_thread == 1) THEN
+      IF (do_checks) THEN
          IF (x_data%potential_parameter%potential_type /= do_potential_truncated .AND. &
              x_data%potential_parameter%potential_type /= do_potential_short .AND. &
              x_data%potential_parameter%potential_type /= do_potential_mix_cl_trunc .AND. &
@@ -2219,9 +2219,9 @@ CONTAINS
             DO i = 0, x_data%periodic_parameter%number_of_shells
                total_number_of_cells = total_number_of_cells + count_cells_perd(i, x_data%periodic_parameter%perd)
             END DO
-            IF (total_number_of_cells < SIZE(x_data%neighbor_cells)) THEN
-               IF (i_thread == 1) THEN
 
+            IF (do_checks) THEN
+               IF (total_number_of_cells < SIZE(x_data%neighbor_cells)) THEN
                   WRITE (char_nshells, '(I3)') SIZE(x_data%neighbor_cells)
                   WRITE (error_msg, '(A,A,A)') "Periodic Hartree Fock calculation requested with use "// &
                      "of a truncated potential. The number of shells to be considered "// &

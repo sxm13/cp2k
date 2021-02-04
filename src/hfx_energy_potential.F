@@ -668,8 +668,7 @@ CONTAINS
       IF (do_periodic) THEN
          ! ** Rebuild neighbor lists in case the cell has changed (i.e. NPT MD)
          actual_x_data%periodic_parameter%number_of_shells = actual_x_data%periodic_parameter%mode
-         CALL hfx_create_neighbor_cells(actual_x_data, actual_x_data%periodic_parameter%number_of_shells_from_input, &
-                                        cell, i_thread)
+         CALL hfx_create_neighbor_cells(actual_x_data, cell, i_thread == 0)
       END IF
 
       potential_parameter = actual_x_data%potential_parameter
