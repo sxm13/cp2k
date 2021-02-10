@@ -55,6 +55,7 @@ MODULE kpoint_types
    PUBLIC :: kpoint_env_create, get_kpoint_env
    PUBLIC :: kpoint_sym_type
    PUBLIC :: kpoint_sym_create
+   PUBLIC :: kpoint_cell_to_index
 
 ! **************************************************************************************************
 !> \brief Keeps information about a specific k-point
@@ -809,6 +810,33 @@ CONTAINS
       END IF
 
    END SUBROUTINE kpoint_sym_release
+
+! **************************************************************************************************
+!> \brief Get the image index given the (integer) neighbor cell coordinates
+!> \param kpoints kpoint_type instance
+!> \param cell cell coordinates
+!> \param notfound the value if not found
+!> \return The positive index if found, 0 (or the value of notfound) otherwise
+! **************************************************************************************************
+   PURE FUNCTION kpoint_cell_to_index(kpoints, cell, notfound) RESULT(cindex)
+      TYPE(kpoint_type), INTENT(IN)                      :: kpoints
+      INTEGER, DIMENSION(3), INTENT(IN)                  :: cell
+      INTEGER, INTENT(IN), OPTIONAL                      :: notfound
+      INTEGER                                            :: cindex
+
+      cindex = 0
+
+      IF (PRESENT(notfound)) &
+         cindex = notfound
+
+      IF (.NOT. ASSOCIATED(kpoints%cell_to_index)) &
+         RETURN
+
+      IF (ANY(cell < LBOUND(kpoints%cell_to_index)) .OR. ANY(cell > UBOUND(kpoints%cell_to_index))) &
+         RETURN
+
+      cindex = kpoints%cell_to_index(cell(1), cell(2), cell(3))
+   END FUNCTION kpoint_cell_to_index
 
 ! **************************************************************************************************
 

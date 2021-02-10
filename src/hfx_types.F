@@ -180,7 +180,7 @@ MODULE hfx_types
    TYPE hfx_periodic_type
       INTEGER                                  :: number_of_shells !! number of periodic image cells
       LOGICAL                                  :: do_periodic !! periodic ?
-      INTEGER                                  :: perd(3) !! x,xy,xyz,...
+      INTEGER                                  :: perd(3) ! 1 if a direction X, Y, Z should be treated periodic, 0 otherwise
       INTEGER                                  :: mode
       REAL(dp)                                 :: R_max_stress
       INTEGER                                  :: number_of_shells_from_input
@@ -204,7 +204,7 @@ MODULE hfx_types
 
 ! **************************************************************************************************
    TYPE hfx_cell_type
-      REAL(dp)                                 :: cell(3)
+      INTEGER                                  :: cell(3)
       REAL(dp)                                 :: cell_r(3)
    END TYPE
 
@@ -313,7 +313,7 @@ MODULE hfx_types
       REAL(dp)                                 :: P(3)
       REAL(dp)                                 :: R
       REAL(dp)                                 :: pgf_max
-      REAL(dp), DIMENSION(3)                   :: bcell
+      INTEGER                                  :: bcell(3)
    END TYPE
 
 ! **************************************************************************************************
@@ -595,7 +595,7 @@ CONTAINS
       CHARACTER(LEN=512)                                 :: error_msg
       CHARACTER(LEN=default_path_length)                 :: char_val
       INTEGER :: handle, i, i_thread, iatom, ikind, int_val, irep, jkind, max_set, n_rep_hf, &
-         n_threads, natom, natom_a, natom_b, nkind, nseta, nsetb, pbc_shells, storage_id
+         n_threads, natom, natom_a, natom_b, nkind, nseta, nsetb, storage_id
       INTEGER, DIMENSION(:), POINTER                     :: atom2kind, kind_of
       LOGICAL                                            :: do_ri, logic_val, my_do_exx
       REAL(dp)                                           :: real_val
@@ -648,11 +648,7 @@ CONTAINS
             actual_x_data%periodic_parameter%number_of_shells = int_val
             actual_x_data%periodic_parameter%mode = int_val
             CALL get_cell(cell=cell, periodic=actual_x_data%periodic_parameter%perd)
-            IF (SUM(actual_x_data%periodic_parameter%perd) == 0) THEN
-               actual_x_data%periodic_parameter%do_periodic = .FALSE.
-            ELSE
-               actual_x_data%periodic_parameter%do_periodic = .TRUE.
-            END IF
+            actual_x_data%periodic_parameter%do_periodic = ANY(actual_x_data%periodic_parameter%perd > 0)
 
             !! SCREENING section
             hf_sub_section => section_vals_get_subs_vals(hfx_section, "SCREENING", i_rep_section=irep)
@@ -836,10 +832,10 @@ CONTAINS
 
             IF (actual_x_data%periodic_parameter%do_periodic) THEN
                hf_pbc_section => section_vals_get_subs_vals(hfx_section, "PERIODIC", i_rep_section=irep)
-               CALL section_vals_val_get(hf_pbc_section, "NUMBER_OF_SHELLS", i_val=pbc_shells)
-               actual_x_data%periodic_parameter%number_of_shells_from_input = pbc_shells
+               CALL section_vals_val_get(hf_pbc_section, "NUMBER_OF_SHELLS", &
+                                         i_val=actual_x_data%periodic_parameter%number_of_shells_from_input)
                ALLOCATE (actual_x_data%neighbor_cells(1))
-               CALL hfx_create_neighbor_cells(actual_x_data, pbc_shells, cell, i_thread)
+               CALL hfx_create_neighbor_cells(actual_x_data, cell, i_thread == 1)
             ELSE
                ALLOCATE (actual_x_data%neighbor_cells(1))
                ! ** Initialize this guy to enable non periodic stress regtests
@@ -1528,16 +1524,18 @@ CONTAINS
 !>      07.2011 refactored
 ! **************************************************************************************************
    SUBROUTINE hfx_create_basis_types(basis_parameter, basis_info, qs_kind_set, do_admm)
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(hfx_basis_info_type)                          :: basis_info
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(OUT), &
+         POINTER                                         :: basis_parameter
+      TYPE(hfx_basis_info_type), INTENT(OUT)             :: basis_info
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       LOGICAL, INTENT(IN)                                :: do_admm
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'hfx_create_basis_types'
 
-      INTEGER :: co_counter, handle, i, ikind, ipgf, iset, j, k, la, max_am_kind, max_coeff, &
-         max_nsgfl, max_pgf, max_pgf_kind, max_set, nkind, nl_count, nset, nseta, offset_a, &
-         offset_a1, s_offset_nl_a, sgfa, so_counter
+      CHARACTER(LEN=default_string_length)               :: basis_type
+      INTEGER :: handle, i, ikind, ipgf, iset, j, k, la, max_am_kind, max_coeff, max_nsgfl, &
+         max_pgf, max_pgf_kind, max_set, nkind, nl_count, nset, nseta, offset_a, offset_a1, &
+         s_offset_nl_a, sgfa, so_counter
       INTEGER, DIMENSION(:), POINTER                     :: la_max, la_min, npgfa, nshell
       INTEGER, DIMENSION(:, :), POINTER                  :: first_sgfa, nl_a
       REAL(dp), DIMENSION(:, :), POINTER                 :: sphi_a
@@ -1551,21 +1549,17 @@ CONTAINS
       ALLOCATE (basis_parameter(nkind))
       max_set = 0
       DO ikind = 1, nkind
-         IF (.NOT. do_admm) THEN
-            CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type="ORB")
-            CALL get_qs_kind_set(qs_kind_set, &
-                                 maxsgf=basis_info%max_sgf, &
-                                 maxnset=basis_info%max_set, &
-                                 maxlgto=basis_info%max_am)
+         basis_type = "ORB"
+         IF (do_admm) &
+            basis_type = "AUX_FIT"
 
-         ELSE
-            CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type="AUX_FIT")
-            CALL get_qs_kind_set(qs_kind_set, &
-                                 maxsgf=basis_info%max_sgf, &
-                                 maxnset=basis_info%max_set, &
-                                 maxlgto=basis_info%max_am, &
-                                 basis_type="AUX_FIT")
-         END IF
+         CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_a, basis_type=basis_type)
+         CALL get_qs_kind_set(qs_kind_set, &
+                              maxsgf=basis_info%max_sgf, &
+                              maxnset=basis_info%max_set, &
+                              maxlgto=basis_info%max_am, &
+                              basis_type=basis_type)
+
          IF (basis_info%max_set < max_set) CPABORT("UNEXPECTED MAX_SET")
          max_set = MAX(max_set, basis_info%max_set)
          CALL get_gto_basis_set(gto_basis_set=orb_basis_a, &
@@ -1585,6 +1579,8 @@ CONTAINS
                                 kind_radius=basis_parameter(ikind)%kind_radius)
       END DO
       DO ikind = 1, nkind
+         ! TODO: the following uses the basis_info%max_am of the last kind from the previous iteration
+         !       to determine the boundaries for nsgfl, is that correct?  Why?
          ALLOCATE (basis_parameter(ikind)%nsgfl(0:basis_info%max_am, max_set))
          basis_parameter(ikind)%nsgfl = 0
          nset = basis_parameter(ikind)%nset
@@ -1639,8 +1635,6 @@ CONTAINS
                s_offset_nl_a = 0
                DO la = la_min(iset), la_max(iset)
                   offset_a = offset_a1 + ncoset(la - 1)
-                  co_counter = 0
-                  co_counter = co_counter + 1
                   so_counter = 0
                   DO k = sgfa + s_offset_nl_a, sgfa + s_offset_nl_a + nso(la)*nl_a(la, iset) - 1
                      DO i = offset_a + 1, offset_a + nco(la)
@@ -1923,34 +1917,32 @@ CONTAINS
 !> \brief - This routine computes the neighbor cells that are taken into account
 !>        in periodic runs
 !> \param x_data contains all relevant data structures for hfx runs
-!> \param pbc_shells number of shells taken into account
 !> \param cell cell
-!> \param i_thread current thread ID
+!> \param do_checks whether to run some checks (usually only to be done on one thread)
 !> \par History
 !>      09.2007 created [Manuel Guidon]
 !> \author Manuel Guidon
 ! **************************************************************************************************
-   SUBROUTINE hfx_create_neighbor_cells(x_data, pbc_shells, cell, i_thread)
-      TYPE(hfx_type), POINTER                            :: x_data
-      INTEGER, INTENT(INOUT)                             :: pbc_shells
-      TYPE(cell_type), POINTER                           :: cell
-      INTEGER, INTENT(IN)                                :: i_thread
+   SUBROUTINE hfx_create_neighbor_cells(x_data, cell, do_checks)
+      TYPE(hfx_type), INTENT(INOUT)                      :: x_data
+      TYPE(cell_type), INTENT(IN)                        :: cell
+      LOGICAL, INTENT(IN)                                :: do_checks
 
       CHARACTER(LEN=512)                                 :: error_msg
       CHARACTER(LEN=64)                                  :: char_nshells
       INTEGER :: i, idx, ikind, ipgf, iset, ishell, j, jkind, jpgf, jset, jshell, k, kshell, l, &
-         m(3), max_shell, nseta, nsetb, total_number_of_cells, ub, ub_max
+         m(3), max_shell, nseta, nsetb, pbc_shells, total_number_of_cells, ub, ub_max
       INTEGER, DIMENSION(:), POINTER                     :: la_max, lb_max, npgfa, npgfb
       LOGICAL                                            :: image_cell_found, nothing_more_to_add
       REAL(dp) :: cross_product(3), dist_min, distance(14), l_min, normal(3, 6), P(3, 14), &
          plane_vector(3, 2), point_in_plane(3), r(3), R1, R_max, R_max_stress, s(3), x, y, z, Zeta1
       REAL(dp), DIMENSION(:, :), POINTER                 :: zeta, zetb
-      TYPE(hfx_cell_type), ALLOCATABLE, DIMENSION(:)     :: tmp_neighbor_cells
+      TYPE(hfx_cell_type), DIMENSION(:), POINTER         :: tmp_neighbor_cells
 
-      total_number_of_cells = 0
+      pbc_shells = x_data%periodic_parameter%number_of_shells_from_input
 
       ! ** Check some settings
-      IF (i_thread == 1) THEN
+      IF (do_checks) THEN
          IF (x_data%potential_parameter%potential_type /= do_potential_truncated .AND. &
              x_data%potential_parameter%potential_type /= do_potential_short .AND. &
              x_data%potential_parameter%potential_type /= do_potential_mix_cl_trunc .AND. &
@@ -2006,11 +1998,10 @@ CONTAINS
          R_max = 2.0_dp*R_max + x_data%potential_parameter%cutoff_radius
          nothing_more_to_add = .FALSE.
          max_shell = 0
-         total_number_of_cells = 0
          ub = 1
          DEALLOCATE (x_data%neighbor_cells)
          ALLOCATE (x_data%neighbor_cells(1))
-         x_data%neighbor_cells(1)%cell = 0.0_dp
+         x_data%neighbor_cells(1)%cell = 0
          x_data%neighbor_cells(1)%cell_r = 0.0_dp
 
          ! ** What follows is kind of a ray tracing algorithm
@@ -2051,18 +2042,13 @@ CONTAINS
          DO WHILE (.NOT. nothing_more_to_add)
             ! Calculate distances to the eight points P1 to P8
             image_cell_found = .FALSE.
-            ALLOCATE (tmp_neighbor_cells(1:ub))
-            DO i = 1, ub - 1
-               tmp_neighbor_cells(i) = x_data%neighbor_cells(i)
-            END DO
+            tmp_neighbor_cells => x_data%neighbor_cells
             ub_max = (2*max_shell + 1)**3
-            DEALLOCATE (x_data%neighbor_cells)
             ALLOCATE (x_data%neighbor_cells(1:ub_max))
-            DO i = 1, ub - 1
-               x_data%neighbor_cells(i) = tmp_neighbor_cells(i)
-            END DO
+
+            x_data%neighbor_cells(1:ub - 1) = tmp_neighbor_cells(1:ub - 1)
             DO i = ub, ub_max
-               x_data%neighbor_cells(i)%cell = 0.0_dp
+               x_data%neighbor_cells(i)%cell = 0
                x_data%neighbor_cells(i)%cell_r = 0.0_dp
             END DO
 
@@ -2084,7 +2070,7 @@ CONTAINS
                         P(2, idx) = y + jshell
                         P(3, idx) = z + kshell
                         CALL scaled_to_real(r, P(:, idx), cell)
-                        distance(idx) = SQRT(SUM(r**2))
+                        distance(idx) = NORM2(r)
                         P(1:3, idx) = r
                      END DO
                   END DO
@@ -2098,7 +2084,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 1) + normal(2, 1)*P(2, 1) + normal(3, 1)*P(3, 1))
 
                IF (point_is_in_quadrilateral(P(:, 1), P(:, 3), P(:, 4), P(:, 2), point_in_plane)) THEN
@@ -2114,7 +2100,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 1) + normal(2, 1)*P(2, 1) + normal(3, 1)*P(3, 1))
 
                IF (point_is_in_quadrilateral(P(:, 1), P(:, 5), P(:, 6), P(:, 2), point_in_plane)) THEN
@@ -2130,7 +2116,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 5) + normal(2, 1)*P(2, 5) + normal(3, 1)*P(3, 5))
 
                IF (point_is_in_quadrilateral(P(:, 5), P(:, 7), P(:, 8), P(:, 6), point_in_plane)) THEN
@@ -2146,7 +2132,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 3) + normal(2, 1)*P(2, 3) + normal(3, 1)*P(3, 3))
 
                IF (point_is_in_quadrilateral(P(:, 3), P(:, 7), P(:, 8), P(:, 4), point_in_plane)) THEN
@@ -2162,7 +2148,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 2) + normal(2, 1)*P(2, 2) + normal(3, 1)*P(3, 2))
 
                IF (point_is_in_quadrilateral(P(:, 2), P(:, 6), P(:, 8), P(:, 4), point_in_plane)) THEN
@@ -2178,7 +2164,7 @@ CONTAINS
                cross_product(1) = plane_vector(2, 1)*plane_vector(3, 2) - plane_vector(3, 1)*plane_vector(2, 2)
                cross_product(2) = plane_vector(3, 1)*plane_vector(1, 2) - plane_vector(1, 1)*plane_vector(3, 2)
                cross_product(3) = plane_vector(1, 1)*plane_vector(2, 2) - plane_vector(2, 1)*plane_vector(1, 2)
-               normal(:, 1) = cross_product/SQRT(SUM(cross_product**2))
+               normal(:, 1) = cross_product/NORM2(cross_product)
                point_in_plane = -normal(:, 1)*(normal(1, 1)*P(1, 1) + normal(2, 1)*P(2, 1) + normal(3, 1)*P(3, 1))
 
                IF (point_is_in_quadrilateral(P(:, 1), P(:, 5), P(:, 7), P(:, 3), point_in_plane)) THEN
@@ -2192,8 +2178,7 @@ CONTAINS
                   image_cell_found = .TRUE.
                END IF
                IF (dist_min < R_max) THEN
-                  total_number_of_cells = total_number_of_cells + 1
-                  x_data%neighbor_cells(ub)%cell = REAL((/ishell, jshell, kshell/), dp)
+                  x_data%neighbor_cells(ub)%cell = [ishell, jshell, kshell]
                   ub = ub + 1
                   image_cell_found = .TRUE.
                END IF
@@ -2207,38 +2192,30 @@ CONTAINS
                nothing_more_to_add = .TRUE.
             END IF
          END DO
+
          ! now remove what is not needed
-         ALLOCATE (tmp_neighbor_cells(total_number_of_cells))
-         DO i = 1, ub - 1
-            tmp_neighbor_cells(i) = x_data%neighbor_cells(i)
-         END DO
-         DEALLOCATE (x_data%neighbor_cells)
-         ! If we only need the supercell, total_number_of_cells is still 0, repair
-         IF (total_number_of_cells == 0) THEN
-            total_number_of_cells = 1
-            ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
-            DO i = 1, total_number_of_cells
-               x_data%neighbor_cells(i)%cell = 0.0_dp
-               x_data%neighbor_cells(i)%cell_r = 0.0_dp
-            END DO
+         tmp_neighbor_cells => x_data%neighbor_cells
+
+         ! If we only need the supercell, ignore tmp_neighbor_cells
+         IF (ub == 1) THEN
+            ALLOCATE (x_data%neighbor_cells(1))
+            x_data%neighbor_cells(1)%cell = 0
+            x_data%neighbor_cells(1)%cell_r = 0.0_dp
          ELSE
-            ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
-            DO i = 1, total_number_of_cells
-               x_data%neighbor_cells(i) = tmp_neighbor_cells(i)
-            END DO
+            ALLOCATE (x_data%neighbor_cells(ub - 1))
+            x_data%neighbor_cells(1:ub - 1) = tmp_neighbor_cells(1:ub - 1)
          END IF
+
          DEALLOCATE (tmp_neighbor_cells)
 
-         IF (x_data%periodic_parameter%number_of_shells == do_hfx_auto_shells) THEN
-            ! Do nothing
-         ELSE
+         IF (x_data%periodic_parameter%number_of_shells /= do_hfx_auto_shells) THEN
             total_number_of_cells = 0
             DO i = 0, x_data%periodic_parameter%number_of_shells
                total_number_of_cells = total_number_of_cells + count_cells_perd(i, x_data%periodic_parameter%perd)
             END DO
-            IF (total_number_of_cells < SIZE(x_data%neighbor_cells)) THEN
-               IF (i_thread == 1) THEN
 
+            IF (do_checks) THEN
+               IF (total_number_of_cells < SIZE(x_data%neighbor_cells)) THEN
                   WRITE (char_nshells, '(I3)') SIZE(x_data%neighbor_cells)
                   WRITE (error_msg, '(A,A,A)') "Periodic Hartree Fock calculation requested with use "// &
                      "of a truncated potential. The number of shells to be considered "// &
@@ -2247,17 +2224,14 @@ CONTAINS
                   CPWARN(error_msg)
                END IF
             END IF
-            total_number_of_cells = 0
-            DO i = 0, x_data%periodic_parameter%number_of_shells
-               total_number_of_cells = total_number_of_cells + count_cells_perd(i, x_data%periodic_parameter%perd)
-            END DO
-            DEALLOCATE (x_data%neighbor_cells)
 
+            DEALLOCATE (x_data%neighbor_cells)
             ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
+
             m = 0
             i = 1
             DO WHILE (SUM(m**2) <= x_data%periodic_parameter%number_of_shells)
-               x_data%neighbor_cells(i)%cell = REAL(m, dp)
+               x_data%neighbor_cells(i)%cell = m
                CALL next_image_cell_perd(m, x_data%periodic_parameter%perd)
                i = i + 1
             ENDDO
@@ -2268,14 +2242,15 @@ CONTAINS
          DO i = 0, pbc_shells
             total_number_of_cells = total_number_of_cells + count_cells_perd(i, x_data%periodic_parameter%perd)
          END DO
-         DEALLOCATE (x_data%neighbor_cells)
 
+         DEALLOCATE (x_data%neighbor_cells)
          ALLOCATE (x_data%neighbor_cells(total_number_of_cells))
 
+         ! enumerate the cells
          m = 0
          i = 1
          DO WHILE (SUM(m**2) <= pbc_shells)
-            x_data%neighbor_cells(i)%cell = REAL(m, dp)
+            x_data%neighbor_cells(i)%cell = m
             CALL next_image_cell_perd(m, x_data%periodic_parameter%perd)
             i = i + 1
          ENDDO
@@ -2283,9 +2258,8 @@ CONTAINS
 
       ! ** Transform into real coord
       DO i = 1, SIZE(x_data%neighbor_cells)
-         r = 0.0_dp
          x_data%neighbor_cells(i)%cell_r(:) = 0.0_dp
-         s = x_data%neighbor_cells(i)%cell(:)
+         s = REAL(x_data%neighbor_cells(i)%cell, KIND=dp)
          CALL scaled_to_real(x_data%neighbor_cells(i)%cell_r, s, cell)
       END DO
       x_data%periodic_parameter%number_of_shells = pbc_shells
@@ -2309,8 +2283,8 @@ CONTAINS
 !> \param P ...
 !> \return ...
 ! **************************************************************************************************
-   FUNCTION point_is_in_quadrilateral(A, B, C, D, P)
-      REAL(dp)                                           :: A(3), B(3), C(3), D(3), P(3)
+   PURE FUNCTION point_is_in_quadrilateral(A, B, C, D, P)
+      REAL(dp), INTENT(IN)                               :: A(3), B(3), C(3), D(3), P(3)
       LOGICAL                                            :: point_is_in_quadrilateral
 
       REAL(dp), PARAMETER :: fuzzy = 1000.0_dp*EPSILON(1.0_dp)
@@ -2347,11 +2321,13 @@ CONTAINS
       invDenom = 1/(dot00*dot11 - dot01*dot01)
       u = (dot11*dot02 - dot01*dot12)*invDenom
       v = (dot00*dot12 - dot01*dot02)*invDenom
+
       ! ** Check if point is in triangle
       IF ((u >= 0 - fuzzy) .AND. (v >= 0 - fuzzy) .AND. (u + v <= 1 + fuzzy)) THEN
          point_is_in_quadrilateral = .TRUE.
          RETURN
       END IF
+
       v0 = C - A
       v1 = B - A
       v2 = P - A
@@ -2371,7 +2347,6 @@ CONTAINS
       ! ** Check if point is in triangle
       IF ((u >= 0 - fuzzy) .AND. (v >= 0 - fuzzy) .AND. (u + v <= 1 + fuzzy)) THEN
          point_is_in_quadrilateral = .TRUE.
-         RETURN
       END IF
 
    END FUNCTION point_is_in_quadrilateral

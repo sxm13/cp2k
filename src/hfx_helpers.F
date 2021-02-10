@@ -26,7 +26,7 @@ MODULE hfx_helpers
 CONTAINS
 
 ! **************************************************************************************************
-!> \brief - Auxiliary function for creating periodic neighbor cells
+!> \brief Count the number of (periodic) cells for the given shell
 !> \param shell number of shells in each coordinate direction
 !> \param perd ...
 !> \return ...
@@ -34,7 +34,7 @@ CONTAINS
 !>      09.2007 created [Manuel Guidon]
 !> \author Manuel Guidon
 ! **************************************************************************************************
-   FUNCTION count_cells_perd(shell, perd)
+   PURE FUNCTION count_cells_perd(shell, perd)
       INTEGER, INTENT(IN)                                :: shell, perd(3)
       INTEGER                                            :: count_cells_perd
 
@@ -51,7 +51,7 @@ CONTAINS
    END FUNCTION count_cells_perd
 
 ! **************************************************************************************************
-!> \brief - Auxiliary function for creating periodic neighbor cells
+!> \brief Given m = [i, j, k] return a next cell triplet m
 !> \param m ...
 !> \param perd ...
 !> \par History
@@ -59,7 +59,7 @@ CONTAINS
 !> \author Manuel Guidon
 ! **************************************************************************************************
    SUBROUTINE next_image_cell_perd(m, perd)
-      INTEGER                                            :: m(3)
+      INTEGER, INTENT(INOUT)                             :: m(3)
       INTEGER, INTENT(IN)                                :: perd(3)
 
       INTEGER                                            :: i, j, k, shell
@@ -73,10 +73,10 @@ CONTAINS
             inner: DO k = -shell*perd(3), shell*perd(3)
                IF (.NOT. (i**2 + j**2 + k**2 == shell)) CYCLE inner
                IF (found) THEN
-                  m = (/i, j, k/)
+                  m = [i, j, k]
                   EXIT outer
                ENDIF
-               IF (ALL(M .EQ. (/i, j, k/))) found = .TRUE.
+               IF (ALL(m .EQ. [i, j, k])) found = .TRUE.
             ENDDO inner
          ENDDO
          ENDDO
