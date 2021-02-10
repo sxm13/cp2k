@@ -569,12 +569,9 @@ CONTAINS
 !$OMP                                  ks_matrix,&
 !$OMP                                  ehfx,&
 !$OMP                                  rho_ao,&
-!$OMP                                  matrix_ks_aux_fit_hfx,&
-!$OMP                                  hfx_section,&
 !$OMP                                  para_env,&
 !$OMP                                  my_geo_change,&
 !$OMP                                  irep,&
-!$OMP                                  distribute_fock_matrix,&
 !$OMP                                  kpoints,&
 !$OMP                                  dft_control,&
 !$OMP                                  is_unrestricted,&
@@ -597,7 +594,6 @@ CONTAINS
 !$OMP                                  kind_of,&
 !$OMP                                  natom,&
 !$OMP                                  nkimages,&
-!$OMP                                  ncpu,&
 !$OMP                                  n_processes,&
 !$OMP                                  pgf_product_list_size,&
 !$OMP                                  radii_pgf,&
@@ -607,7 +603,6 @@ CONTAINS
 !$OMP                                  do_periodic,&
 !$OMP                                  eps_schwarz,&
 !$OMP                                  log10_eps_schwarz,&
-!$OMP                                  ispin,&
 !$OMP                                  treat_lsd_in_core,&
 !$OMP                                  fac,&
 !$OMP                                  is_anti_symmetric,&
