@@ -91,7 +91,7 @@ CONTAINS
       REAL(KIND=dp), INTENT(IN), DIMENSION(3) :: A, B, C, D, P, Q, W
       REAL(KIND=dp), INTENT(IN)               :: ZetaInv, EtaInv, ZetapEtaInv, Rho
       INTEGER, INTENT(IN)                     :: m_max
-      REAL(KIND=dp), DIMENSION(:)             :: F
+      REAL(KIND=dp), DIMENSION(:), INTENT(IN) :: F
 
 #if(__LIBINT)
       libint%prv(1)%AB_x(1) = A(1) - B(1)
@@ -161,7 +161,7 @@ CONTAINS
       REAL(KIND=dp), INTENT(IN)               :: zeta_A, zeta_B, zeta_C, zeta_D, ZetaInv, EtaInv, ZetapEtaInv, Rho
 
       INTEGER, INTENT(IN)                     :: m_max
-      REAL(KIND=dp), DIMENSION(:)             :: F
+      REAL(KIND=dp), DIMENSION(:), INTENT(IN) :: F
 
 #if(__LIBINT)
       REAL(KIND=dp)                           :: gammap, gammaq, gammapq, rhop, rhoq
@@ -255,7 +255,7 @@ CONTAINS
       TYPE(cp_libint_t)                       :: libint
       REAL(KIND=dp), INTENT(IN), DIMENSION(3) :: A, B, C, D, P, Q, W
       REAL(KIND=dp), INTENT(IN)               :: ZetaInv, EtaInv, ZetapEtaInv, Rho
-      REAL(KIND=dp), DIMENSION(:)             :: F
+      REAL(KIND=dp), DIMENSION(:), INTENT(IN) :: F
 
       INTEGER, INTENT(IN)                     :: m_max
 

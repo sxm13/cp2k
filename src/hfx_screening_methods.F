@@ -32,6 +32,8 @@ MODULE hfx_screening_methods
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: get_qs_kind,&
                                               qs_kind_type
+
+!$ USE OMP_LIB, ONLY: omp_get_max_threads, omp_get_thread_num
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -61,53 +63,54 @@ CONTAINS
 !> \param lb_max angular momentum
 !> \param npgfa number of primitive cartesian gaussian in actual shell
 !> \param npgfb number of primitive cartesian gaussian in actual shell
-!> \param max_val schwarz screening value
 !> \param potential_parameter contains info for libint
 !> \param tmp_R_1 pgf_based screening coefficients
 !> \param rab2 Squared Distance of centers ab
+!> \return ...
 !> \par History
 !>     03.2007 created [Manuel Guidon]
 !>     02.2009 refactored [Manuel Guidon]
 !> \author Manuel Guidon
 ! **************************************************************************************************
-   SUBROUTINE screen4(lib, ra, rb, zeta, zetb, &
-                      la_min, la_max, lb_min, lb_max, &
-                      npgfa, npgfb, &
-                      max_val, potential_parameter, tmp_R_1, &
-                      rab2)
+   FUNCTION screen4(lib, ra, rb, zeta, zetb, &
+                    la_min, la_max, lb_min, lb_max, &
+                    npgfa, npgfb, &
+                    potential_parameter, tmp_R_1, &
+                    rab2) RESULT(max_val)
 
-      TYPE(cp_libint_t)                                  :: lib
+      TYPE(cp_libint_t), INTENT(INOUT)                   :: lib
       REAL(dp), INTENT(IN)                               :: ra(3), rb(3)
       REAL(dp), DIMENSION(:), INTENT(IN)                 :: zeta, zetb
       INTEGER, INTENT(IN)                                :: la_min, la_max, lb_min, lb_max, npgfa, &
                                                             npgfb
-      REAL(dp), INTENT(INOUT)                            :: max_val
-      TYPE(hfx_potential_type)                           :: potential_parameter
+      TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
-         POINTER                                         :: tmp_R_1
-      REAL(dp)                                           :: rab2
+         INTENT(IN)                                      :: tmp_R_1
+      REAL(dp), INTENT(IN)                               :: rab2
+      REAL(dp)                                           :: max_val
 
       INTEGER                                            :: ipgf, jpgf, la, lb
       REAL(dp)                                           :: max_val_temp, R1
 
-      max_val_temp = max_val
+      max_val = 0.0_dp
+
       DO ipgf = 1, npgfa
          DO jpgf = 1, npgfb
             R1 = MAX(0.0_dp, tmp_R_1(jpgf, ipgf)%x(1)*rab2 + tmp_R_1(jpgf, ipgf)%x(2))
             DO la = la_min, la_max
                DO lb = lb_min, lb_max
                   !Build primitives
-                  CALL evaluate_eri_screen(lib, ra, rb, ra, rb, &
-                                           zeta(ipgf), zetb(jpgf), zeta(ipgf), zetb(jpgf), &
-                                           la, lb, la, lb, &
-                                           max_val_temp, potential_parameter, R1, R1)
+                  max_val_temp = evaluate_eri_screen(lib, ra, rb, ra, rb, &
+                                                     zeta(ipgf), zetb(jpgf), zeta(ipgf), zetb(jpgf), &
+                                                     la, lb, la, lb, &
+                                                     potential_parameter, R1, R1)
 
                   max_val = MAX(max_val, max_val_temp)
                END DO !lb
             END DO !la
          END DO !jpgf
       END DO !ipgf
-   END SUBROUTINE screen4
+   END FUNCTION screen4
 
 ! **************************************************************************************************
 !> \brief updates the maximum of the density matrix in compressed form for screening purposes
@@ -272,8 +275,6 @@ CONTAINS
 !> \param radii_pgf coefficients for long-range screening
 !> \param max_set Maximum Number of basis set sets in the system
 !> \param max_pgf Maximum Number of basis set pgfs in the system
-!> \param n_threads ...
-!> \param i_thread Thread ID of current task
 !> \par History
 !>     02.2009 created [Manuel Guidon]
 !> \author Manuel Guidon
@@ -296,10 +297,10 @@ CONTAINS
 
    SUBROUTINE calc_screening_functions(qs_env, basis_parameter, lib, potential_parameter, &
                                        coeffs_set, coeffs_kind, coeffs_pgf, radii_pgf, &
-                                       max_set, max_pgf, n_threads, i_thread)
+                                       max_set, max_pgf)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(cp_libint_t)                                  :: lib
+      TYPE(cp_libint_t), DIMENSION(:)                    :: lib
       TYPE(hfx_potential_type)                           :: potential_parameter
       TYPE(hfx_screen_coeff_type), &
          DIMENSION(:, :, :, :), POINTER                  :: coeffs_set
@@ -307,7 +308,7 @@ CONTAINS
          POINTER                                         :: coeffs_kind
       TYPE(hfx_screen_coeff_type), &
          DIMENSION(:, :, :, :, :, :), POINTER            :: coeffs_pgf, radii_pgf
-      INTEGER, INTENT(IN)                                :: max_set, max_pgf, n_threads, i_thread
+      INTEGER, INTENT(IN)                                :: max_set, max_pgf
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calc_screening_functions'
 
@@ -328,16 +329,13 @@ CONTAINS
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_kind_type), POINTER                        :: qs_kind
 
-!$OMP MASTER
       CALL timeset(routineN, handle)
-!$OMP END MASTER
 
       CALL get_qs_env(qs_env=qs_env, &
                       qs_kind_set=qs_kind_set)
 
       nkind = SIZE(qs_kind_set, 1)
 
-!$OMP MASTER
       ALLOCATE (coeffs_pgf(max_pgf, max_pgf, max_set, max_set, nkind, nkind))
 
       DO ikind = 1, nkind
@@ -354,8 +352,6 @@ CONTAINS
          END DO
       END DO
 
-!$OMP END MASTER
-!$OMP BARRIER
       ra = 0.0_dp
       rb = 0.0_dp
       DO ikind = 1, nkind
@@ -404,8 +400,16 @@ CONTAINS
                   DO ipgf = 1, npgfa(iset)
                      DO jpgf = 1, npgfb(jset)
                         radius = rpgfa(ipgf, iset) + rpgfb(jpgf, jset)
-                        DO i = i_thread, 100, n_threads
-                           rb(1) = 0.0_dp + REAL(i, dp)*0.01_dp*radius
+!$OMP PARALLEL DEFAULT(NONE) SHARED(lib, data, radius, ra, radii_pgf, &
+!$OMP                               iset, jset, ipgf, jpgf, ikind, jkind, &
+!$OMP                               la_min, la_max, lb_min, lb_max, &
+!$OMP                               zeta, zetb, potential_parameter, &
+!$OMP                               max_contraction_a, max_contraction_b) &
+!$OMP                        PRIVATE(i, max_val, max_val_temp, R1) &
+!$OMP                        FIRSTPRIVATE(rb) &
+!$OMP                        NUM_THREADS(SIZE(lib))
+                        DO i = omp_get_thread_num(), 100, omp_get_max_threads()
+                           rb(1) = 0.0_dp + 0.01_dp*radius*i
                            max_val = 0.0_dp
                            R1 = MAX(0.0_dp, radii_pgf(jpgf, ipgf, jset, iset, jkind, ikind)%x(1)*rb(1)**2 + &
                                     radii_pgf(jpgf, ipgf, jset, iset, jkind, ikind)%x(2))
@@ -413,10 +417,10 @@ CONTAINS
                               DO lb = lb_min(jset), lb_max(jset)
                                  !Build primitives
                                  max_val_temp = 0.0_dp
-                                 CALL evaluate_eri_screen(lib, ra, rb, ra, rb, &
-                                                          zeta(ipgf, iset), zetb(jpgf, jset), zeta(ipgf, iset), zetb(jpgf, jset), &
-                                                          la, lb, la, lb, &
-                                                          max_val_temp, potential_parameter, R1, R1)
+                                 max_val_temp = evaluate_eri_screen(lib(omp_get_thread_num() + 1), ra, rb, ra, rb, &
+                                                           zeta(ipgf, iset), zetb(jpgf, jset), zeta(ipgf, iset), zetb(jpgf, jset), &
+                                                                    la, lb, la, lb, &
+                                                                    potential_parameter, R1, R1)
                                  max_val = MAX(max_val, max_val_temp)
                               END DO !lb
                            END DO !la
@@ -429,13 +433,9 @@ CONTAINS
                               DATA(2, i) = LOG10((max_val))
                            END IF
                         END DO
-!$OMP BARRIER
-!$OMP MASTER
+!$OMP END PARALLEL
                         CALL optimize_it(DATA, x, powell_min_log)
                         coeffs_pgf(jpgf, ipgf, jset, iset, jkind, ikind)%x = x
-!$OMP END MASTER
-!$OMP BARRIER
-
                      END DO
                   END DO
                END DO
@@ -443,7 +443,6 @@ CONTAINS
          END DO
       END DO
 
-!$OMP MASTER
       ALLOCATE (coeffs_set(max_set, max_set, nkind, nkind))
 
       DO ikind = 1, nkind
@@ -455,8 +454,7 @@ CONTAINS
             END DO
          END DO
       END DO
-!$OMP END MASTER
-!$OMP BARRIER
+
       ra = 0.0_dp
       rb = 0.0_dp
       DO ikind = 1, nkind
@@ -464,16 +462,7 @@ CONTAINS
          qs_kind => qs_kind_set(ikind)
          CALL get_qs_kind(qs_kind=qs_kind, basis_set=orb_basis)
          NULLIFY (la_max, la_min, npgfa, zeta)
-!      CALL get_gto_basis_set(gto_basis_set=orb_basis,&
-!                             lmax=la_max,&
-!                             lmin=la_min,&
-!                             npgf=npgfa,&
-!                             nset=nseta,&
-!                             zet=zeta,&
-!                             set_radius=set_radius_a,&
-!                             first_sgf=first_sgfa,&
-!                             sphi=sphi_a,&
-!                             nsgf_set=nsgfa)
+
          la_max => basis_parameter(ikind)%lmax
          la_min => basis_parameter(ikind)%lmin
          npgfa => basis_parameter(ikind)%npgf
@@ -510,14 +499,21 @@ CONTAINS
                   max_contraction_b = MAXVAL((/(SUM(ABS(sphi_b(1:ncob, i))), i=sgfb, sgfb + nsgfb(jset) - 1)/))
                   radius = set_radius_a(iset) + set_radius_b(jset)
                   tmp_R_1 => radii_pgf(:, :, jset, iset, jkind, ikind)
-                  DO i = i_thread, 100, n_threads
-                     rb(1) = 0.0_dp + REAL(i, dp)*0.01_dp*radius
-                     max_val = 0.0_dp
-                     CALL screen4(lib, ra, rb, &
-                                  zeta(:, iset), zetb(:, jset), &
-                                  la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
-                                  npgfa(iset), npgfb(jset), &
-                                  max_val, potential_parameter, tmp_R_1, rb(1)**2)
+!$OMP PARALLEL DEFAULT(NONE) SHARED(lib, data, radius, ra, tmp_R_1, &
+!$OMP                               iset, jset, npgfa, npgfb, &
+!$OMP                               la_min, la_max, lb_min, lb_max, &
+!$OMP                               zeta, zetb, potential_parameter, &
+!$OMP                               max_contraction_a, max_contraction_b) &
+!$OMP                        PRIVATE(i, max_val) &
+!$OMP                        FIRSTPRIVATE(rb) &
+!$OMP                        NUM_THREADS(SIZE(lib))
+                  DO i = omp_get_thread_num(), 100, omp_get_max_threads()
+                     rb(1) = 0.0_dp + 0.01_dp*radius*i
+                     max_val = screen4(lib(omp_get_thread_num() + 1), ra, rb, &
+                                       zeta(:, iset), zetb(:, jset), &
+                                       la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
+                                       npgfa(iset), npgfb(jset), &
+                                       potential_parameter, tmp_R_1, rb(1)**2)
                      max_val = SQRT(max_val)
                      max_val = max_val*max_contraction_a*max_contraction_b
                      DATA(1, i) = rb(1)
@@ -527,12 +523,10 @@ CONTAINS
                         DATA(2, i) = LOG10((max_val))
                      END IF
                   END DO
-!$OMP BARRIER
-!$OMP MASTER
+!$OMP END PARALLEL
+
                   CALL optimize_it(DATA, x, powell_min_log)
                   coeffs_set(jset, iset, jkind, ikind)%x = x
-!$OMP END MASTER
-!$OMP BARRIER
                END DO
             END DO
 
@@ -540,7 +534,6 @@ CONTAINS
       END DO
 
       ! ** now kinds
-!$OMP MASTER
       ALLOCATE (coeffs_kind(nkind, nkind))
 
       DO ikind = 1, nkind
@@ -548,7 +541,7 @@ CONTAINS
             coeffs_kind(jkind, ikind)%x(:) = 0.0_dp
          END DO
       END DO
-!$OMP END MASTER
+
       ra = 0.0_dp
       rb = 0.0_dp
       DO ikind = 1, nkind
@@ -592,15 +585,22 @@ CONTAINS
                   ncob = npgfb(jset)*ncoset(lb_max(jset))
                   sgfb = first_sgfb(1, jset)
                   max_contraction_b = MAXVAL((/(SUM(ABS(sphi_b(1:ncob, i))), i=sgfb, sgfb + nsgfb(jset) - 1)/))
-                  DO i = i_thread, 100, n_threads
-                     rb(1) = 0.0_dp + REAL(i, dp)*0.01_dp*radius
-                     max_val = 0.0_dp
-                     tmp_R_1 => radii_pgf(:, :, jset, iset, jkind, ikind)
-                     CALL screen4(lib, ra, rb, &
-                                  zeta(:, iset), zetb(:, jset), &
-                                  la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
-                                  npgfa(iset), npgfb(jset), &
-                                  max_val, potential_parameter, tmp_R_1, rb(1)**2)
+                  tmp_R_1 => radii_pgf(:, :, jset, iset, jkind, ikind)
+!$OMP PARALLEL DEFAULT(NONE) SHARED(lib, data, radius, ra, tmp_R_1, &
+!$OMP                               iset, jset, npgfa, npgfb, &
+!$OMP                               la_min, la_max, lb_min, lb_max, &
+!$OMP                               zeta, zetb, potential_parameter, &
+!$OMP                               max_contraction_a, max_contraction_b) &
+!$OMP                        PRIVATE(i, max_val) &
+!$OMP                        FIRSTPRIVATE(rb) &
+!$OMP                        NUM_THREADS(SIZE(lib))
+                  DO i = omp_get_thread_num(), 100, omp_get_max_threads()
+                     rb(1) = 0.0_dp + 0.01_dp*radius*i
+                     max_val = screen4(lib(omp_get_thread_num() + 1), ra, rb, &
+                                       zeta(:, iset), zetb(:, jset), &
+                                       la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
+                                       npgfa(iset), npgfb(jset), &
+                                       potential_parameter, tmp_R_1, rb(1)**2)
                      DATA(1, i) = rb(1)
                      max_val = SQRT(max_val)
                      max_val = max_val*max_contraction_a*max_contraction_b
@@ -610,21 +610,15 @@ CONTAINS
                         DATA(2, i) = MAX(LOG10(max_val), DATA(2, i))
                      END IF
                   END DO
+!$OMP END PARALLEL
                END DO
             END DO
-!$OMP BARRIER
-!$OMP MASTER
             CALL optimize_it(DATA, x, powell_min_log)
             coeffs_kind(jkind, ikind)%x = x
-!$OMP END MASTER
-!$OMP BARRIER
          END DO
       END DO
 
-!$OMP MASTER
       CALL timestop(handle)
-!$OMP END MASTER
-
    END SUBROUTINE calc_screening_functions
 
 ! **************************************************************************************************
@@ -635,8 +629,6 @@ CONTAINS
 !> \param max_set Maximum Number of basis set sets in the system
 !> \param max_pgf Maximum Number of basis set pgfs in the system
 !> \param eps_schwarz ...
-!> \param n_threads ...
-!> \param i_thread Thread ID of current task
 !> \par History
 !>     02.2009 created [Manuel Guidon]
 !> \author Manuel Guidon
@@ -650,16 +642,15 @@ CONTAINS
 ! **************************************************************************************************
 
    SUBROUTINE calc_pair_dist_radii(qs_env, basis_parameter, &
-                                   radii_pgf, max_set, max_pgf, eps_schwarz, &
-                                   n_threads, i_thread)
+                                   radii_pgf, max_set, max_pgf, eps_schwarz)
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN)     :: basis_parameter
       TYPE(hfx_screen_coeff_type), &
-         DIMENSION(:, :, :, :, :, :), POINTER            :: radii_pgf
+         DIMENSION(:, :, :, :, :, :), INTENT(OUT), &
+         POINTER                                         :: radii_pgf
       INTEGER, INTENT(IN)                                :: max_set, max_pgf
-      REAL(dp)                                           :: eps_schwarz
-      INTEGER, INTENT(IN)                                :: n_threads, i_thread
+      REAL(dp), INTENT(IN)                               :: eps_schwarz
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calc_pair_dist_radii'
 
@@ -669,24 +660,21 @@ CONTAINS
       INTEGER, DIMENSION(:), POINTER                     :: la_max, la_min, lb_max, lb_min, npgfa, &
                                                             npgfb, nsgfa, nsgfb
       INTEGER, DIMENSION(:, :), POINTER                  :: first_sgfa, first_sgfb
-      REAL(dp) :: cutoff, ff, max_contraction_a, max_contraction_b, prefactor, R1, R_max, ra(3), &
-         rab(3), rab2, radius, rap(3), rb(3), rp(3), x(2), zetp
+      REAL(dp) :: DATA(2, 0:100), ff, max_contraction_a, max_contraction_b, prefactor, R1, R_max, &
+         ra(3), rab(3), rab2, radius, rap(3), rb(3), rp(3), x(2), zetp
       REAL(dp), DIMENSION(:, :), POINTER                 :: rpgfa, rpgfb, sphi_a, sphi_b, zeta, zetb
-      REAL(dp), SAVE                                     :: DATA(2, 0:100)
       TYPE(gto_basis_set_type), POINTER                  :: orb_basis
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(qs_kind_type), POINTER                        :: qs_kind
 
-!$OMP MASTER
       CALL timeset(routineN, handle)
-!$OMP END MASTER
       CALL get_qs_env(qs_env=qs_env, &
                       qs_kind_set=qs_kind_set)
 
       nkind = SIZE(qs_kind_set, 1)
       ra = 0.0_dp
       rb = 0.0_dp
-!$OMP MASTER
+
       ALLOCATE (radii_pgf(max_pgf, max_pgf, max_set, max_set, nkind, nkind))
       DO ikind = 1, nkind
          DO jkind = 1, nkind
@@ -703,8 +691,6 @@ CONTAINS
       END DO
 
       DATA = 0.0_dp
-!$OMP END MASTER
-!$OMP BARRIER
 
       DO ikind = 1, nkind
          NULLIFY (qs_kind, orb_basis)
@@ -749,47 +735,46 @@ CONTAINS
                   DO ipgf = 1, npgfa(iset)
                      DO jpgf = 1, npgfb(jset)
                         radius = rpgfa(ipgf, iset) + rpgfb(jpgf, jset)
-                        DO i = i_thread, 100, n_threads
+                        zetp = zeta(ipgf, iset) + zetb(jpgf, jset)
+                        ff = zetb(jpgf, jset)/zetp
+!$OMP PARALLEL DEFAULT(NONE) SHARED(data, radius, ra, &
+!$OMP                               iset, jset, ipgf, jpgf, &
+!$OMP                               la_min, la_max, lb_min, lb_max, &
+!$OMP                               zeta, zetp, eps_schwarz, ff) &
+!$OMP                        PRIVATE(la, lb,R_max, rb, rab, rab2, prefactor, rap, rp, R1, i)
+                        DO i = omp_get_thread_num(), 100, omp_get_max_threads()
                            rb(1) = 0.0_dp + 0.01_dp*radius*i
                            R_max = 0.0_dp
                            DO la = la_min(iset), la_max(iset)
                               DO lb = lb_min(jset), lb_max(jset)
-                                 zetp = zeta(ipgf, iset) + zetb(jpgf, jset)
-                                 ff = zetb(jpgf, jset)/zetp
                                  rab = 0.0_dp
                                  rab(1) = rb(1)
                                  rab2 = rb(1)**2
                                  prefactor = EXP(-zeta(ipgf, iset)*ff*rab2)
                                  rap(:) = ff*rab(:)
-                                 rp(:) = ra(:) + rap(:)
-                                 rb(:) = ra(:) + rab(:)
-                                 cutoff = 1.0_dp
+                                 rp(:) = rap(:)
+                                 rb(:) = rab(:)
                                  R1 = exp_radius_very_extended( &
                                       la, la, lb, lb, ra=ra, rb=rb, rp=rp, &
-                                      zetp=zetp, eps=eps_schwarz, prefactor=prefactor, cutoff=cutoff, epsabs=1.0E-12_dp)
+                                      zetp=zetp, eps=eps_schwarz, prefactor=prefactor, cutoff=1.0_dp, epsabs=1.0E-12_dp)
                                  R_max = MAX(R_max, R1)
                               END DO
                            END DO
                            DATA(1, i) = rb(1)
                            DATA(2, i) = R_max
                         END DO
+!$OMP END PARALLEL
                         ! the radius can not be negative, we take that into account in the code as well by using a MAX
                         ! the functional form we use for fitting does not seem particularly accurate
-!$OMP BARRIER
-!$OMP MASTER
                         CALL optimize_it(DATA, x, 0.0_dp)
                         radii_pgf(jpgf, ipgf, jset, iset, jkind, ikind)%x = x
-!$OMP END MASTER
-!$OMP BARRIER
                      END DO !jpgf
                   END DO !ipgf
                END DO
             END DO
          END DO
       END DO
-!$OMP MASTER
       CALL timestop(handle)
-!$OMP END MASTER
    END SUBROUTINE calc_pair_dist_radii
 
 !
@@ -839,7 +824,7 @@ CONTAINS
          opt_state%rhobeg = 0.1_dp
          opt_state%rhoend = 0.000001_dp
 
-         DO
+         DO WHILE (opt_state%state /= -1)
 
             ! compute function
             IF (opt_state%state == 2) THEN
@@ -855,7 +840,6 @@ CONTAINS
                END DO
             END IF
 
-            IF (opt_state%state == -1) EXIT
             CALL powell_optimize(opt_state%nvar, x, opt_state)
          END DO
 

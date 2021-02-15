@@ -32,7 +32,6 @@ MODULE mp2_direct_method
    USE input_constants,                 ONLY: do_potential_TShPSC
    USE kinds,                           ONLY: dp,&
                                               int_8
-   USE libint_wrapper,                  ONLY: cp_libint_t
    USE mathconstants,                   ONLY: zero
    USE message_passing,                 ONLY: mp_max,&
                                               mp_sendrecv,&
@@ -160,7 +159,6 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(dimen, 2)                 :: zero_mat
       REAL(KIND=dp), DIMENSION(dimen, dimen)             :: C_T
       TYPE(cell_type), POINTER                           :: cell
-      TYPE(cp_libint_t)                                  :: private_lib
       TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(hfx_pgf_list), ALLOCATABLE, DIMENSION(:)      :: pgf_list_ij, pgf_list_kl
@@ -196,8 +194,7 @@ CONTAINS
                                  nsgf_max, primitive_integrals, ee_work, ee_work2, ee_buffer1, ee_buffer2, &
                                  ee_primitives_tmp, nspins, max_contraction, max_pgf, pgf_list_ij, &
                                  pgf_list_kl, pgf_product_list, eps_schwarz, log10_eps_schwarz, &
-                                 private_lib, screen_coeffs_set, screen_coeffs_kind, screen_coeffs_pgf, &
-                                 radii_pgf)
+                                 screen_coeffs_set, screen_coeffs_kind, screen_coeffs_pgf, radii_pgf)
 
       ln_10 = LOG(10.0_dp)
 
@@ -502,7 +499,7 @@ CONTAINS
                      tmp_screen_pgf1 => screen_coeffs_pgf(:, :, jset, iset, jkind, ikind)
                      tmp_screen_pgf2 => screen_coeffs_pgf(:, :, lset, kset, lkind, kkind)
 
-                     CALL coulomb4(private_lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
+                     CALL coulomb4(qs_env%x_data(1, 1)%lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
                                    la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
                                    lc_min(kset), lc_max(kset), ld_min(lset), ld_max(lset), &
                                    nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &

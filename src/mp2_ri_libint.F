@@ -52,7 +52,6 @@ MODULE mp2_ri_libint
                                               do_potential_long
    USE kinds,                           ONLY: dp,&
                                               int_8
-   USE libint_wrapper,                  ONLY: cp_libint_t
    USE message_passing,                 ONLY: mp_sum
    USE mp2_types,                       ONLY: init_TShPSC_lmax,&
                                               mp2_biel_type,&
@@ -462,7 +461,6 @@ CONTAINS
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
       TYPE(cp_fm_struct_type), POINTER                   :: fm_struct_L
       TYPE(cp_fm_type), POINTER                          :: fm_matrix_L
-      TYPE(cp_libint_t)                                  :: private_lib
       TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
       TYPE(hfx_pgf_list), ALLOCATABLE, DIMENSION(:)      :: pgf_list_ij, pgf_list_kl
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
@@ -497,7 +495,7 @@ CONTAINS
                                  nsgf_max, primitive_integrals, ee_work, ee_work2, ee_buffer1, ee_buffer2, &
                                  ee_primitives_tmp, nspins, max_contraction, max_pgf, pgf_list_ij, &
                                  pgf_list_kl, pgf_product_list, eps_schwarz, log10_eps_schwarz, &
-                                 private_lib, screen_coeffs_set, screen_coeffs_kind, screen_coeffs_pgf, &
+                                 screen_coeffs_set, screen_coeffs_kind, screen_coeffs_pgf, &
                                  radii_pgf, RI_basis_parameter, RI_basis_info)
 
       ALLOCATE (radii_pgf_large(SIZE(radii_pgf, 1), SIZE(radii_pgf, 2)))
@@ -618,7 +616,7 @@ CONTAINS
 
                   ALLOCATE (L_block(nsgfa(iset), nsgfc(kset)))
 
-                  CALL coulomb4(private_lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
+                  CALL coulomb4(qs_env%x_data(1, 1)%lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
                                 la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
                                 lc_min(kset), lc_max(kset), ld_min(lset), ld_max(lset), &
                                 nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
@@ -846,7 +844,7 @@ CONTAINS
 
                   max_contraction_val = max_contraction(kset, katom)*max_contraction(lset, latom)
 
-                  CALL coulomb4(private_lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
+                  CALL coulomb4(qs_env%x_data(1, 1)%lib, ra, rb, rc, rd, npgfa(iset), npgfb(jset), npgfc(kset), npgfd(lset), &
                                 la_min(iset), la_max(iset), lb_min(jset), lb_max(jset), &
                                 lc_min(kset), lc_max(kset), ld_min(lset), ld_max(lset), &
                                 nsgfa(iset), nsgfb(jset), nsgfc(kset), nsgfd(lset), &
@@ -977,7 +975,6 @@ CONTAINS
 !> \param pgf_product_list ...
 !> \param eps_schwarz ...
 !> \param log10_eps_schwarz ...
-!> \param private_lib ...
 !> \param screen_coeffs_set ...
 !> \param screen_coeffs_kind ...
 !> \param screen_coeffs_pgf ...
@@ -990,7 +987,7 @@ CONTAINS
                                     nsgf_max, primitive_integrals, ee_work, ee_work2, ee_buffer1, ee_buffer2, &
                                     ee_primitives_tmp, nspins, max_contraction, max_pgf, pgf_list_ij, &
                                     pgf_list_kl, pgf_product_list, eps_schwarz, log10_eps_schwarz, &
-                                    private_lib, screen_coeffs_set, screen_coeffs_kind, screen_coeffs_pgf, &
+                                    screen_coeffs_set, screen_coeffs_kind, screen_coeffs_pgf, &
                                     radii_pgf, RI_basis_parameter, RI_basis_info)
 
       TYPE(cell_type), POINTER                           :: cell
@@ -1019,7 +1016,6 @@ CONTAINS
       TYPE(hfx_pgf_product_list), ALLOCATABLE, &
          DIMENSION(:), INTENT(OUT)                       :: pgf_product_list
       REAL(KIND=dp), INTENT(OUT)                         :: eps_schwarz, log10_eps_schwarz
-      TYPE(cp_libint_t), INTENT(OUT)                     :: private_lib
       TYPE(hfx_screen_coeff_type), &
          DIMENSION(:, :, :, :), POINTER                  :: screen_coeffs_set
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
@@ -1145,8 +1141,6 @@ CONTAINS
 
       !! The number of integrals that fit into the given MAX_MEMORY
 
-      private_lib = actual_x_data%lib
-
       !!!!!!!! Missing part on the density matrix
 
       !! Initialize schwarz screening matrices for near field estimates and boxing screening matrices
@@ -1156,14 +1150,13 @@ CONTAINS
 
       IF (.NOT. shm_master_x_data%screen_funct_is_initialized) THEN
          CALL calc_pair_dist_radii(qs_env, basis_parameter, &
-                                   shm_master_x_data%pair_dist_radii_pgf, max_set, max_pgf, eps_schwarz, &
-                                   n_threads, i_thread)
-         CALL calc_screening_functions(qs_env, basis_parameter, private_lib, shm_master_x_data%potential_parameter, &
+                                   shm_master_x_data%pair_dist_radii_pgf, max_set, max_pgf, eps_schwarz)
+         CALL calc_screening_functions(qs_env, basis_parameter, qs_env%x_data(irep, :)%lib, shm_master_x_data%potential_parameter, &
                                        shm_master_x_data%screen_funct_coeffs_set, &
                                        shm_master_x_data%screen_funct_coeffs_kind, &
                                        shm_master_x_data%screen_funct_coeffs_pgf, &
                                        shm_master_x_data%pair_dist_radii_pgf, &
-                                       max_set, max_pgf, n_threads, i_thread)
+                                       max_set, max_pgf)
 
          shm_master_x_data%screen_funct_is_initialized = .TRUE.
       END IF

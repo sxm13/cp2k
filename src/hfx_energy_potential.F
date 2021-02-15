@@ -91,7 +91,7 @@ MODULE hfx_energy_potential
    USE t_c_g0,                          ONLY: t_c_g0_init => init
    USE util,                            ONLY: sort
 
-!$ USE OMP_LIB, ONLY: omp_get_max_threads, omp_get_thread_num, omp_get_num_threads
+!$ USE OMP_LIB, ONLY: omp_get_max_threads, omp_get_thread_num
 
 #include "./base/base_uses.f90"
 
@@ -162,8 +162,8 @@ CONTAINS
          katom_end
       INTEGER :: katom_start, kind_kind_idx, kkind, kp_idx_q, kp_idx_t, kset, l_max, latom, &
          latom_block, latom_end, latom_start, lkind, lset, ma, max_pgf, max_set, mb, my_bin_id, &
-         my_bin_size, my_thread_id, n_threads, natom, nbidx, nbits, ncob, ncos_max, nints, &
-         nkimages, nkind, nneighbors, nseta, nsetb, nsgf_max, pa, sgfb, shm_number_of_p_entries, &
+         my_bin_size, my_thread_id, n_threads, natom, nbidx, nbits, ncoa, ncob, ncos_max, nints, &
+         nkimages, nkind, nneighbors, nseta, nsetb, nsgf_max, pa, sgfa, shm_number_of_p_entries, &
          shm_task_counter, shm_total_bins, sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, &
          sphi_b_u3, sphi_c_u1, sphi_c_u2, sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, &
          tmp_i4, unit_id
@@ -178,7 +178,7 @@ CONTAINS
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, tmp_index
       INTEGER, DIMENSION(:), POINTER :: la_max, la_min, lb_max, lb_min, lc_max, lc_min, ld_max, &
          ld_min, npgfa, npgfb, npgfc, npgfd, nsgfa, nsgfb, nsgfc, nsgfd, shm_block_offset
-      INTEGER, DIMENSION(:, :), POINTER :: first_sgfb, nsgfl_a, nsgfl_b, nsgfl_c, nsgfl_d, &
+      INTEGER, DIMENSION(:, :), POINTER :: first_sgfa, nsgfl_a, nsgfl_b, nsgfl_c, nsgfl_d, &
          offset_ac_set, offset_ad_set, offset_bc_set, offset_bd_set, shm_atomic_block_offset, &
          shm_is_assoc_atomic_block
       INTEGER, DIMENSION(:, :, :, :), POINTER            :: shm_set_offset
@@ -197,7 +197,7 @@ CONTAINS
          primitive_integrals
       REAL(dp), DIMENSION(:, :), POINTER :: full_density_alpha, full_density_beta, full_ks_alpha, &
          full_ks_beta, max_contraction, ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, shm_pmax_atom, &
-         shm_pmax_block, sphi_b, zeta, zetb, zetc, zetd
+         shm_pmax_block, sphi_a, zeta, zetb, zetc, zetd
       REAL(dp), DIMENSION(:, :, :), POINTER              :: sphi_a_ext_set, sphi_b_ext_set, &
                                                             sphi_c_ext_set, sphi_d_ext_set
       REAL(dp), DIMENSION(:, :, :, :), POINTER           :: sphi_a_ext, sphi_b_ext, sphi_c_ext, &
@@ -286,12 +286,13 @@ CONTAINS
       END IF
 
       shm_master_x_data => x_data(irep, 1)
+      basis_parameter => shm_master_x_data%basis_parameter
 
       !! Calculate l_max used in fgamma , because init_md_ftable is definitely not thread safe
       nkind = SIZE(atomic_kind_set, 1)
       l_max = 0
       DO ikind = 1, nkind
-         l_max = MAX(l_max, MAXVAL(shm_master_x_data%basis_parameter(ikind)%lmax))
+         l_max = MAX(l_max, MAXVAL(basis_parameter(ikind)%lmax))
       ENDDO
       l_max = 4*l_max
       CALL init_md_ftable(l_max)
@@ -371,7 +372,7 @@ CONTAINS
       ! Can we assume that all matrices ks_matrix(i,j) have the same occupation pattern?
       IF (my_geo_change) THEN
          CALL get_atomic_block_maps(ks_matrix(1, 1)%matrix, &
-                                    shm_master_x_data%basis_parameter, &
+                                    basis_parameter, &
                                     kind_of, &
                                     shm_master_x_data%is_assoc_atomic_block, &
                                     shm_master_x_data%number_of_p_entries, &
@@ -411,7 +412,7 @@ CONTAINS
                                   shm_number_of_p_entries, &
                                   shm_master_x_data%block_offset, &
                                   kind_of, &
-                                  shm_master_x_data%basis_parameter, &
+                                  basis_parameter, &
                                   get_max_vals_spin=.FALSE., &
                                   antisymmetric=is_anti_symmetric)
          END DO
@@ -425,7 +426,7 @@ CONTAINS
                                      shm_number_of_p_entries, &
                                      shm_master_x_data%block_offset, &
                                      kind_of, &
-                                     shm_master_x_data%basis_parameter, &
+                                     basis_parameter, &
                                      get_max_vals_spin=.FALSE., &
                                      antisymmetric=is_anti_symmetric)
             END DO
@@ -446,7 +447,7 @@ CONTAINS
                                     shm_master_x_data%atomic_block_offset, &
                                     shm_pmax_atom, &
                                     full_density_alpha, full_density_beta, &
-                                    natom, kind_of, shm_master_x_data%basis_parameter, &
+                                    natom, kind_of, basis_parameter, &
                                     nkind, shm_is_assoc_atomic_block)
             END IF
          END IF
@@ -460,7 +461,7 @@ CONTAINS
                                      shm_number_of_p_entries, &
                                      shm_master_x_data%block_offset, &
                                      kind_of, &
-                                     shm_master_x_data%basis_parameter, &
+                                     basis_parameter, &
                                      get_max_vals_spin=.TRUE., &
                                      rho_beta=rho_ao(2, img)%matrix, &
                                      antisymmetric=is_anti_symmetric)
@@ -480,7 +481,7 @@ CONTAINS
                                     shm_master_x_data%atomic_block_offset, &
                                     shm_pmax_atom, &
                                     full_density_alpha, full_density_beta, &
-                                    natom, kind_of, shm_master_x_data%basis_parameter, &
+                                    natom, kind_of, basis_parameter, &
                                     nkind, shm_is_assoc_atomic_block)
             END IF
          END IF
@@ -492,7 +493,7 @@ CONTAINS
                                   shm_number_of_p_entries, &
                                   shm_master_x_data%block_offset, &
                                   kind_of, &
-                                  shm_master_x_data%basis_parameter, &
+                                  basis_parameter, &
                                   get_max_vals_spin=.FALSE., &
                                   antisymmetric=is_anti_symmetric)
          END DO
@@ -513,22 +514,70 @@ CONTAINS
       ! hence we can get basic information like max L, ... here:
       max_set = shm_master_x_data%basis_info%max_set
 
+      ALLOCATE (max_contraction(max_set, natom))
+      max_contraction = 0.0_dp
+
       ! precompute maximum nco, nsgf, max_pgf (allocation of scratch is done locally in each thread)
+      ! as well as the max_contraction which only depends on the shared basis_parameter and kind_of
       ncos_max = 0
       nsgf_max = 0
       max_pgf = 0
       DO iatom = 1, natom
          ikind = kind_of(iatom)
-         nseta = shm_master_x_data%basis_parameter(ikind)%nset
-         npgfa => shm_master_x_data%basis_parameter(ikind)%npgf
-         la_max => shm_master_x_data%basis_parameter(ikind)%lmax
-         nsgfa => shm_master_x_data%basis_parameter(ikind)%nsgf
+         nseta = basis_parameter(ikind)%nset
+         npgfa => basis_parameter(ikind)%npgf
+         la_max => basis_parameter(ikind)%lmax
+         nsgfa => basis_parameter(ikind)%nsgf
+         sphi_a => basis_parameter(ikind)%sphi
+         first_sgfa => basis_parameter(ikind)%first_sgf
          DO iset = 1, nseta
             ncos_max = MAX(ncos_max, ncoset(la_max(iset)))
             nsgf_max = MAX(nsgf_max, nsgfa(iset))
             max_pgf = MAX(max_pgf, npgfa(iset))
+
+            ! takes the primitive to contracted transformation into account
+            ncoa = npgfa(iset)*ncoset(la_max(iset))
+            sgfa = first_sgfa(1, iset)
+            ! if the primitives are assumed to be all of max_val2, max_val2*p2s_b becomes
+            ! the maximum value after multiplication with sphi_a
+            max_contraction(iset, iatom) = MAXVAL([(SUM(ABS(sphi_a(1:ncoa, i))), i=sgfa, sgfa + nsgfa(iset) - 1)])
          ENDDO
       ENDDO
+
+      !! Initialize schwarz screening matrices for near field estimates and boxing screening matrices
+      !! for far field estimates. The update is only performed if the geomtry of the system changed.
+      !! If the system is periodic, then the corresponding routines are called and some variables
+      !! are initialized
+      IF (.NOT. shm_master_x_data%screen_funct_is_initialized) THEN
+         CALL calc_pair_dist_radii(qs_env, basis_parameter, &
+                                   shm_master_x_data%pair_dist_radii_pgf, max_set, max_pgf, eps_schwarz)
+         CALL calc_screening_functions(qs_env, basis_parameter, x_data(irep, :)%lib, &
+                                       shm_master_x_data%potential_parameter, &
+                                       shm_master_x_data%screen_funct_coeffs_set, &
+                                       shm_master_x_data%screen_funct_coeffs_kind, &
+                                       shm_master_x_data%screen_funct_coeffs_pgf, &
+                                       shm_master_x_data%pair_dist_radii_pgf, &
+                                       max_set, max_pgf)
+
+         shm_master_x_data%screen_funct_is_initialized = .TRUE.
+      END IF
+
+      screen_coeffs_set => shm_master_x_data%screen_funct_coeffs_set
+      screen_coeffs_kind => shm_master_x_data%screen_funct_coeffs_kind
+      screen_coeffs_pgf => shm_master_x_data%screen_funct_coeffs_pgf
+      radii_pgf => shm_master_x_data%pair_dist_radii_pgf
+
+      IF (do_periodic) THEN
+         ! ** Rebuild neighbor lists in case the cell has changed (i.e. NPT MD)
+         shm_master_x_data%periodic_parameter%number_of_shells = shm_master_x_data%periodic_parameter%mode
+         CALL hfx_create_neighbor_cells(shm_master_x_data, cell, .TRUE.)
+      END IF
+      nneighbors = SIZE(shm_master_x_data%neighbor_cells)
+
+      !! Parameters related to the potential 1/r, erf(wr)/r, erfc(wr/r)
+      potential_parameter = shm_master_x_data%potential_parameter
+
+      coeffs_kind_max0 = MAXVAL(screen_coeffs_kind(:, :)%x(2))
 
       ! Reset storage counter given by MAX_MEMORY by subtracting all buffers
       ! Fock and density Matrices (shared)
@@ -612,6 +661,7 @@ CONTAINS
 !$OMP                                  ncos_max,&
 !$OMP                                  nsgf_max,&
 !$OMP                                  max_pgf,&
+!$OMP                                  nneighbors,&
 !$OMP                                  shm_atomic_block_offset,&
 !$OMP                                  shm_set_offset,&
 !$OMP                                  shm_block_offset,&
@@ -622,18 +672,22 @@ CONTAINS
 !$OMP                                  shm_pmax_atom,&
 !$OMP                                  shm_pmax_block,&
 !$OMP                                  shm_atomic_pair_list,&
+!$OMP                                  basis_parameter,&
+!$OMP                                  potential_parameter,&
+!$OMP                                  max_contraction,&
+!$OMP                                  coeffs_kind_max0,&
 !$OMP                                  subtr_size_mb) &
-!$OMP PRIVATE(i_thread,actual_x_data,potential_parameter,&
+!$OMP PRIVATE(i_thread,actual_x_data,&
 !$OMP         general_parameter,load_balance_parameter,memory_parameter,cache_size,bits_max_val,&
-!$OMP         basis_parameter,neris_coulomb,max_val_memory,ikind,&
+!$OMP         neris_coulomb,max_val_memory,ikind,&
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
-!$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,max_contraction,&
-!$OMP         jkind,lb_max,nsetb,npgfb,first_sgfb,sphi_b,nsgfb,ncob,sgfb,nneighbors,pgf_list_ij,pgf_list_kl,&
+!$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,&
+!$OMP         jkind,lb_max,nsetb,npgfb,nsgfb,ncob,pgf_list_ij,pgf_list_kl,&
 !$OMP         pgf_product_list,use_disk_storage,counter,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,&
 !$OMP         eps_storage,buffer_overflow,private_lib,handle_getp,&
 !$OMP         handle_load,my_bin_size,maxval_container,integral_containers,maxval_cache,&
-!$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,coeffs_kind_max0,iset,jset,set_list_ij,&
+!$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,iset,jset,set_list_ij,&
 !$OMP         set_list_kl,iatom,iatom_start,iatom_end,jatom,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
 !$OMP         my_thread_id,my_bin_id,handle_bin,bintime_start,my_istart,my_current_counter,latom_block,tmp_block,&
 !$OMP         katom_block,katom_start,katom_end,latom_start,latom_end,pmax_blocks,list_ij,list_kl,i_set_list_ij_start,&
@@ -647,7 +701,7 @@ CONTAINS
 !$OMP         sphi_c_ext_set,sphi_d_ext_set,pmax_entry,log10_pmax,current_counter,nints,estimate_to_store_int,&
 !$OMP         spherical_estimate,nbits,buffer_left,buffer_start,buffer_size,max_contraction_val,tmp_r_1,tmp_r_2,&
 !$OMP         tmp_screen_pgf1,tmp_screen_pgf2,cartesian_estimate,bintime_stop,iw,j,tmp_i4,&
-!$OMP         bin,eps_scaling_str,eps_schwarz_min_str,nbidx,kp_idx_q,kp_idx_t) &
+!$OMP         bin,eps_scaling_str,eps_schwarz_min_str,nbidx,kp_idx_q,kp_idx_t,iatom_block,jatom_block) &
 !$OMP REDUCTION(+: shm_neris_total,shm_neris_onthefly,shm_neris_incore,shm_neris_disk,&
 !$OMP              shm_nprim_ints,shm_stor_counter_integrals,shm_stor_count_int_disk,&
 !$OMP              shm_stor_count_max_val,shm_mem_compression_counter) &
@@ -658,18 +712,9 @@ CONTAINS
 
       actual_x_data => x_data(irep, i_thread + 1)
 
-      IF (do_periodic) THEN
-         ! ** Rebuild neighbor lists in case the cell has changed (i.e. NPT MD)
-         actual_x_data%periodic_parameter%number_of_shells = actual_x_data%periodic_parameter%mode
-         CALL hfx_create_neighbor_cells(actual_x_data, cell, i_thread == 0)
-      END IF
-
-      potential_parameter = actual_x_data%potential_parameter
-
       general_parameter = actual_x_data%general_parameter
       load_balance_parameter => actual_x_data%load_balance_parameter
       memory_parameter => actual_x_data%memory_parameter
-      basis_parameter => actual_x_data%basis_parameter
 
       cache_size = memory_parameter%cache_size
       bits_max_val = memory_parameter%bits_max_val
@@ -694,29 +739,8 @@ CONTAINS
       ALLOCATE (ee_buffer1(ncos_max**4))
       ALLOCATE (ee_buffer2(ncos_max**4))
       ALLOCATE (ee_primitives_tmp(nsgf_max**4))
-      ALLOCATE (max_contraction(max_set, natom))
-
-      max_contraction = 0.0_dp
-      DO jatom = 1, natom
-         jkind = kind_of(jatom)
-         lb_max => basis_parameter(jkind)%lmax
-         nsetb = basis_parameter(jkind)%nset
-         npgfb => basis_parameter(jkind)%npgf
-         first_sgfb => basis_parameter(jkind)%first_sgf
-         sphi_b => basis_parameter(jkind)%sphi
-         nsgfb => basis_parameter(jkind)%nsgf
-         DO jset = 1, nsetb
-            ! takes the primitive to contracted transformation into account
-            ncob = npgfb(jset)*ncoset(lb_max(jset))
-            sgfb = first_sgfb(1, jset)
-            ! if the primitives are assumed to be all of max_val2, max_val2*p2s_b becomes
-            ! the maximum value after multiplication with sphi_b
-            max_contraction(jset, jatom) = MAXVAL((/(SUM(ABS(sphi_b(1:ncob, i))), i=sgfb, sgfb + nsgfb(jset) - 1)/))
-         ENDDO
-      ENDDO
 
       ! ** Allocate buffers for pgf_lists
-      nneighbors = SIZE(actual_x_data%neighbor_cells)
       ALLOCATE (pgf_list_ij(max_pgf**2))
       ALLOCATE (pgf_list_kl(max_pgf**2))
       ! the size of pgf_product_list is allocated and resized as needed. The initial guess grows as needed
@@ -758,47 +782,11 @@ CONTAINS
 
       !! The number of integrals that fit into the given MAX_MEMORY
 
-      !! Parameters related to the potential 1/r, erf(wr)/r, erfc(wr/r)
-      potential_parameter = actual_x_data%potential_parameter
-
       !! Variable determining whether a required integral needs to be calculated
       !! due to cache-miss. Treat on-the-fly as constant cache-miss.
       buffer_overflow = memory_parameter%do_all_on_the_fly
 
       private_lib = actual_x_data%lib
-
-      !! Initialize schwarz screening matrices for near field estimates and boxing screening matrices
-      !! for far field estimates. The update is only performed if the geomtry of the system changed.
-      !! If the system is periodic, then the corresponding routines are called and some variables
-      !! are initialized
-
-!$OMP BARRIER
-
-      IF (.NOT. shm_master_x_data%screen_funct_is_initialized) THEN
-         CALL calc_pair_dist_radii(qs_env, basis_parameter, &
-                                   shm_master_x_data%pair_dist_radii_pgf, max_set, max_pgf, eps_schwarz, &
-                                   n_threads, i_thread)
-!$OMP BARRIER
-         CALL calc_screening_functions(qs_env, basis_parameter, private_lib, shm_master_x_data%potential_parameter, &
-                                       shm_master_x_data%screen_funct_coeffs_set, &
-                                       shm_master_x_data%screen_funct_coeffs_kind, &
-                                       shm_master_x_data%screen_funct_coeffs_pgf, &
-                                       shm_master_x_data%pair_dist_radii_pgf, &
-                                       max_set, max_pgf, n_threads, i_thread)
-
-!$OMP MASTER
-         shm_master_x_data%screen_funct_is_initialized = .TRUE.
-!$OMP END MASTER
-      END IF
-!$OMP BARRIER
-
-!$OMP MASTER
-      screen_coeffs_set => shm_master_x_data%screen_funct_coeffs_set
-      screen_coeffs_kind => shm_master_x_data%screen_funct_coeffs_kind
-      screen_coeffs_pgf => shm_master_x_data%screen_funct_coeffs_pgf
-      radii_pgf => shm_master_x_data%pair_dist_radii_pgf
-!$OMP END MASTER
-!$OMP BARRIER
 
       !! Call routines that distribute the load on all processes. If we want to screen on a initial density matrix, there is
       !! an optional parameter. Of course, this is only done if the geometry did change
@@ -827,44 +815,6 @@ CONTAINS
       CALL timestop(handle_load)
 !$OMP END MASTER
 !$OMP BARRIER
-
-      !! Start caluclating integrals of the form (ab|cd) or (ij|kl)
-      !! In order to do so, there is a main four-loop structure that takes into account the two symmetries
-      !!
-      !!   (ab|cd) = (ba|cd) = (ab|dc) = (ba|dc)
-      !!
-      !! by iterating in the following way
-      !!
-      !! DO iatom=1,natom               and       DO katom=1,natom
-      !!   DO jatom=iatom,natom                     DO latom=katom,natom
-      !!
-      !! The third symmetry
-      !!
-      !!  (ab|cd) = (cd|ab)
-      !!
-      !! is taken into account by the following criterion:
-      !!
-      !! IF(katom+latom<=iatom+jatom)  THEN
-      !!   IF( ((iatom+jatom).EQ.(katom+latom) ) .AND.(katom<iatom)) CYCLE
-      !!
-      !! Depending on the degeneracy of an integral the exchange contribution is multiplied by a corresponding
-      !! factor ( symm_fac ).
-      !!
-      !! If one quartet does not pass the screening we CYCLE on the outer most possible loop. Thats why we use
-      !! different hierarchies of short range screening matrices.
-      !!
-      !! If we do a parallel run, each process owns a unique array of workloads. Here, a workload is
-      !! defined as :
-      !!
-      !! istart, jstart, kstart, lstart, number_of_atom_quartets, initial_cpu_id
-      !!
-      !! This tells the process where to start the main loops and how many bunches of integrals it has to
-      !! calculate. The original parallelization is a simple modulo distribution that is binned and
-      !! optimized in the load_balance routines. Since the Monte Carlo routines can swap processors,
-      !! we need to know which was the initial cpu_id.
-      !! Furthermore, the indices iatom, jatom, katom, latom have to be set to istart, jstart, kstart and
-      !! lstart only the first time the loop is executed. All subsequent loops have to start with one or
-      !! iatom and katom respectively. Therefore, we use flags like first_j_loop etc.
 
       IF (do_dynamic_load_balancing) THEN
          my_bin_size = SIZE(actual_x_data%distribution_energy)
@@ -905,9 +855,9 @@ CONTAINS
       END IF
 
       !! Since the I/O routines are no thread-safe, i.e. the procedure to get the unit number, put a lock here
-!$OMP CRITICAL(hfxenergy_io_critical)
       !! If we do disk storage, we have to initialize the containers/caches
       IF (do_disk_storage) THEN
+!$OMP CRITICAL(hfxenergy_io_critical)
          !! IF new md step -> reinitialize containers
          IF (my_geo_change) THEN
             CALL hfx_init_container(maxval_container_disk, memory_parameter%actual_memory_usage_disk, do_disk_storage)
@@ -922,8 +872,8 @@ CONTAINS
                                                memory_parameter%actual_memory_usage_disk, .TRUE.)
             END DO
          END IF
-      END IF
 !$OMP END CRITICAL(hfxenergy_io_critical)
+      END IF
 
 !$OMP BARRIER
 !$OMP MASTER
@@ -983,7 +933,6 @@ CONTAINS
 !$OMP END MASTER
 !$OMP BARRIER
 
-      coeffs_kind_max0 = MAXVAL(screen_coeffs_kind(:, :)%x(2))
       ALLOCATE (set_list_ij((max_set*load_balance_parameter%block_size)**2))
       ALLOCATE (set_list_kl((max_set*load_balance_parameter%block_size)**2))
 
@@ -1025,6 +974,44 @@ CONTAINS
 
       my_bin_size = SIZE(actual_x_data%distribution_energy)
       nblocks = load_balance_parameter%nblocks
+
+      !! Start caluclating integrals of the form (ab|cd) or (ij|kl)
+      !! In order to do so, there is a main four-loop structure that takes into account the two symmetries
+      !!
+      !!   (ab|cd) = (ba|cd) = (ab|dc) = (ba|dc)
+      !!
+      !! by iterating in the following way
+      !!
+      !! DO iatom=1,natom               and       DO katom=1,natom
+      !!   DO jatom=iatom,natom                     DO latom=katom,natom
+      !!
+      !! The third symmetry
+      !!
+      !!  (ab|cd) = (cd|ab)
+      !!
+      !! is taken into account by the following criterion:
+      !!
+      !! IF(katom+latom<=iatom+jatom)  THEN
+      !!   IF( ((iatom+jatom).EQ.(katom+latom) ) .AND.(katom<iatom)) CYCLE
+      !!
+      !! Depending on the degeneracy of an integral the exchange contribution is multiplied by a corresponding
+      !! factor ( symm_fac ).
+      !!
+      !! If one quartet does not pass the screening we CYCLE on the outer most possible loop. Thats why we use
+      !! different hierarchies of short range screening matrices.
+      !!
+      !! If we do a parallel run, each process owns a unique array of workloads. Here, a workload is
+      !! defined as :
+      !!
+      !! istart, jstart, kstart, lstart, number_of_atom_quartets, initial_cpu_id
+      !!
+      !! This tells the process where to start the main loops and how many bunches of integrals it has to
+      !! calculate. The original parallelization is a simple modulo distribution that is binned and
+      !! optimized in the load_balance routines. Since the Monte Carlo routines can swap processors,
+      !! we need to know which was the initial cpu_id.
+      !! Furthermore, the indices iatom, jatom, katom, latom have to be set to istart, jstart, kstart and
+      !! lstart only the first time the loop is executed. All subsequent loops have to start with one or
+      !! iatom and katom respectively. Therefore, we use flags like first_j_loop etc.
 
       bins_left = .TRUE.
       do_it = .TRUE.
@@ -1428,7 +1415,7 @@ CONTAINS
                                                zetc(1:npgfc(kset), kset), zetd(1:npgfd(lset), lset), &
                                                primitive_integrals, &
                                                potential_parameter, &
-                                               actual_x_data%neighbor_cells, screen_coeffs_set(jset, iset, jkind, ikind)%x, &
+                                               shm_master_x_data%neighbor_cells, screen_coeffs_set(jset, iset, jkind, ikind)%x, &
                                                screen_coeffs_set(lset, kset, lkind, kkind)%x, eps_schwarz, &
                                                max_contraction_val, cartesian_estimate, cell, neris_coulomb, &
                                                log10_pmax, log10_eps_schwarz, &
@@ -1458,7 +1445,7 @@ CONTAINS
                                                zetc(1:npgfc(kset), kset), zetd(1:npgfd(lset), lset), &
                                                primitive_integrals, &
                                                potential_parameter, &
-                                               actual_x_data%neighbor_cells, screen_coeffs_set(jset, iset, jkind, ikind)%x, &
+                                               shm_master_x_data%neighbor_cells, screen_coeffs_set(jset, iset, jkind, ikind)%x, &
                                                screen_coeffs_set(lset, kset, lkind, kkind)%x, eps_schwarz, &
                                                max_contraction_val, cartesian_estimate, cell, neris_coulomb, &
                                                log10_pmax, log10_eps_schwarz, &
@@ -1702,8 +1689,6 @@ CONTAINS
       DEALLOCATE (pgf_list_kl)
       DEALLOCATE (pgf_product_list)
 
-      DEALLOCATE (max_contraction)
-
       DEALLOCATE (ee_work, ee_work2, ee_buffer1, ee_buffer2, ee_primitives_tmp)
 
       ! Get some number about ERIS and memory compression, all of them are OMP-reduced(sum)
@@ -1782,9 +1767,10 @@ CONTAINS
       IF (do_dynamic_load_balancing) &
          DEALLOCATE (shm_master_x_data%task_list)
 
+      DEALLOCATE (max_contraction)
+
       !! Calculate the exchange energies from the Kohn-Sham matrix. Before we can go on, we have to symmetrize.
 
-      basis_parameter => shm_master_x_data%basis_parameter
       afac = 1.0_dp
       IF (is_anti_symmetric) afac = -1.0_dp
       ene_x_aa_diag = 0.0_dp

@@ -80,12 +80,12 @@ CONTAINS
    SUBROUTINE build_quartet_data_screen(A, B, C, D, Zeta_A, Zeta_B, Zeta_C, Zeta_D, m_max, &
                                         potential_parameter, libint, R11, R22)
 
-      REAL(KIND=dp)                                      :: A(3), B(3), C(3), D(3)
-      REAL(KIND=dp), INTENT(IN)                          :: Zeta_A, Zeta_B, Zeta_C, Zeta_D
+      REAL(KIND=dp), INTENT(IN)                          :: A(3), B(3), C(3), D(3), Zeta_A, Zeta_B, &
+                                                            Zeta_C, Zeta_D
       INTEGER, INTENT(IN)                                :: m_max
-      TYPE(hfx_potential_type)                           :: potential_parameter
-      TYPE(cp_libint_t)                                  :: libint
-      REAL(dp)                                           :: R11, R22
+      TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
+      TYPE(cp_libint_t), INTENT(INOUT)                   :: libint
+      REAL(dp), INTENT(IN)                               :: R11, R22
 
       INTEGER                                            :: i
       LOGICAL                                            :: use_gamma
@@ -281,7 +281,6 @@ CONTAINS
 !> \param EtaInv ...
 !> \param ZetapEtaInv ...
 !> \param Rho ...
-!> \param RhoInv ...
 !> \param P ...
 !> \param Q ...
 !> \param W ...
@@ -293,20 +292,16 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE build_deriv_data(libint, A, B, C, D, &
                                Zeta_A, Zeta_B, Zeta_C, Zeta_D, &
-                               ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
+                               ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                P, Q, W, m_max, F)
 
-      TYPE(cp_libint_t)                                  :: libint
+      TYPE(cp_libint_t), INTENT(INOUT)                   :: libint
       REAL(KIND=dp), INTENT(IN)                          :: A(3), B(3), C(3), D(3)
       REAL(dp), INTENT(IN)                               :: Zeta_A, Zeta_B, Zeta_C, Zeta_D, ZetaInv, &
-                                                            EtaInv, ZetapEtaInv, Rho, RhoInv, &
-                                                            P(3), Q(3), W(3)
+                                                            EtaInv, ZetapEtaInv, Rho, P(3), Q(3), &
+                                                            W(3)
       INTEGER, INTENT(IN)                                :: m_max
-      REAL(KIND=dp), DIMENSION(:)                        :: F
-
-      MARK_USED(D) ! todo: fix
-      MARK_USED(Zeta_C)
-      MARK_USED(RhoInv)
+      REAL(KIND=dp), DIMENSION(:), INTENT(IN)            :: F
 
       CALL cp_libint_set_params_eri_deriv(libint, A, B, C, D, P, Q, W, zeta_A, zeta_B, zeta_C, zeta_D, &
                                           ZetaInv, EtaInv, ZetapEtaInv, Rho, m_max, F)
@@ -470,7 +465,7 @@ CONTAINS
 
             CALL build_deriv_data(deriv, A, B, C, D, &
                                   Zeta_A, Zeta_B, Zeta_C, Zeta_D, &
-                                  ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
+                                  ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                   P, Q, W, m_max, pgf_product_list(i)%Fm)
             CALL cp_libint_get_derivs(n_d, n_c, n_b, n_a, deriv, work_forces, mysize)
             DO k = 4, 6
@@ -565,7 +560,7 @@ CONTAINS
 
             CALL build_deriv_data(deriv, B, A, C, D, &
                                   Zeta_B, Zeta_A, Zeta_C, Zeta_D, &
-                                  ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
+                                  ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                   P, Q, W, m_max, pgf_product_list(i)%Fm)
             CALL cp_libint_get_derivs(n_d, n_c, n_a, n_b, deriv, work_forces, mysize)
             DO k = 4, 6
@@ -660,7 +655,7 @@ CONTAINS
 
             CALL build_deriv_data(deriv, A, B, D, C, &
                                   Zeta_A, Zeta_B, Zeta_D, Zeta_C, &
-                                  ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
+                                  ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                   P, Q, W, m_max, pgf_product_list(i)%Fm)
             CALL cp_libint_get_derivs(n_c, n_d, n_b, n_a, deriv, work_forces, mysize)
             DO k = 4, 6
@@ -754,7 +749,7 @@ CONTAINS
             ZetapEtaInv = pgf_product_list(i)%ZetapEtaInv
             CALL build_deriv_data(deriv, B, A, D, C, &
                                   Zeta_B, Zeta_A, Zeta_D, Zeta_C, &
-                                  ZetaInv, EtaInv, ZetapEtaInv, Rho, RhoInv, &
+                                  ZetaInv, EtaInv, ZetapEtaInv, Rho, &
                                   P, Q, W, m_max, pgf_product_list(i)%Fm)
             CALL cp_libint_get_derivs(n_c, n_d, n_a, n_b, deriv, work_forces, mysize)
             DO k = 4, 6
@@ -848,7 +843,7 @@ CONTAINS
             ZetapEtaInv = pgf_product_list(i)%ZetapEtaInv
             CALL build_deriv_data(deriv, C, D, A, B, &
                                   Zeta_C, Zeta_D, Zeta_A, Zeta_B, &
-                                  EtaInv, ZetaInv, ZetapEtaInv, Rho, RhoInv, &
+                                  EtaInv, ZetaInv, ZetapEtaInv, Rho, &
                                   Q, P, W, m_max, pgf_product_list(i)%Fm)
             CALL cp_libint_get_derivs(n_b, n_a, n_d, n_c, deriv, work_forces, mysize)
             DO k = 4, 6
@@ -943,7 +938,7 @@ CONTAINS
 
             CALL build_deriv_data(deriv, C, D, B, A, &
                                   Zeta_C, Zeta_D, Zeta_B, Zeta_A, &
-                                  EtaInv, ZetaInv, ZetapEtaInv, Rho, RhoInv, &
+                                  EtaInv, ZetaInv, ZetapEtaInv, Rho, &
                                   Q, P, W, m_max, pgf_product_list(i)%Fm)
             CALL cp_libint_get_derivs(n_a, n_b, n_d, n_c, deriv, work_forces, mysize)
             DO k = 4, 6
@@ -1038,7 +1033,7 @@ CONTAINS
 
             CALL build_deriv_data(deriv, D, C, A, B, &
                                   Zeta_D, Zeta_C, Zeta_A, Zeta_B, &
-                                  EtaInv, ZetaInv, ZetapEtaInv, Rho, RhoInv, &
+                                  EtaInv, ZetaInv, ZetapEtaInv, Rho, &
                                   Q, P, W, m_max, pgf_product_list(i)%Fm)
             CALL cp_libint_get_derivs(n_b, n_a, n_c, n_d, deriv, work_forces, mysize)
             DO k = 4, 6
@@ -1133,7 +1128,7 @@ CONTAINS
 
             CALL build_deriv_data(deriv, D, C, B, A, &
                                   Zeta_D, Zeta_C, Zeta_B, Zeta_A, &
-                                  EtaInv, ZetaInv, ZetapEtaInv, Rho, RhoInv, &
+                                  EtaInv, ZetaInv, ZetapEtaInv, Rho, &
                                   Q, P, W, m_max, pgf_product_list(i)%Fm)
             CALL cp_libint_get_derivs(n_a, n_b, n_c, n_d, deriv, work_forces, mysize)
             DO k = 4, 6
@@ -1282,32 +1277,33 @@ CONTAINS
 !> \param n_b ...
 !> \param n_c ...
 !> \param n_d ...
-!> \param max_val ...
 !> \param potential_parameter ...
 !> \param R1 ...
 !> \param R2 ...
+!> \return ...
 !> \par History
 !>      03.2007 created [Manuel Guidon]
 !>      08.2007 refactured permutation part [Manuel Guidon]
 !> \author Manuel Guidon
 ! **************************************************************************************************
-   SUBROUTINE evaluate_eri_screen(libint, A, B, C, D, Zeta_A, Zeta_B, Zeta_C, Zeta_D, &
-                                  n_a, n_b, n_c, n_d, &
-                                  max_val, potential_parameter, R1, R2)
+   FUNCTION evaluate_eri_screen(libint, A, B, C, D, Zeta_A, Zeta_B, Zeta_C, Zeta_D, &
+                                n_a, n_b, n_c, n_d, &
+                                potential_parameter, R1, R2) RESULT(max_val)
 
-      TYPE(cp_libint_t)                                  :: libint
+      TYPE(cp_libint_t), INTENT(INOUT)                   :: libint
       REAL(dp), INTENT(IN)                               :: A(3), B(3), C(3), D(3), Zeta_A, Zeta_B, &
                                                             Zeta_C, Zeta_D
       INTEGER, INTENT(IN)                                :: n_a, n_b, n_c, n_d
-      REAL(dp), INTENT(INOUT)                            :: max_val
-      TYPE(hfx_potential_type)                           :: potential_parameter
-      REAL(dp)                                           :: R1, R2
+      TYPE(hfx_potential_type), INTENT(IN)               :: potential_parameter
+      REAL(dp), INTENT(IN)                               :: R1, R2
+      REAL(dp)                                           :: max_val
 
       INTEGER                                            :: i, m_max, mysize, perm_case
       REAL(dp), DIMENSION(:), POINTER                    :: p_work
 
       m_max = n_a + n_b + n_c + n_d
       mysize = nco(n_a)*nco(n_b)*nco(n_c)*nco(n_d)
+      max_val = 0.0_dp
 
       IF (m_max /= 0) THEN
          perm_case = 1
@@ -1393,7 +1389,7 @@ CONTAINS
          max_val = ABS(get_ssss_f_val(libint))
       END IF
 
-   END SUBROUTINE evaluate_eri_screen
+   END FUNCTION evaluate_eri_screen
 
 ! **************************************************************************************************
 !> \brief Evaluate electron repulsion integrals for a primitive quartet
