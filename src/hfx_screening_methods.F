@@ -137,17 +137,17 @@ CONTAINS
                               kind_of, basis_parameter, &
                               nkind, is_assoc_atomic_block)
 
-      TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
-      INTEGER, DIMENSION(:), POINTER                     :: map_atom_to_kind_atom
-      INTEGER, DIMENSION(:, :, :, :), POINTER            :: set_offset
-      INTEGER, DIMENSION(:, :), POINTER                  :: atomic_block_offset
-      REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom, full_density_alpha, &
-                                                            full_density_beta
+      TYPE(hfx_p_kind), DIMENSION(:), INTENT(INOUT)      :: pmax_set
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: map_atom_to_kind_atom
+      INTEGER, DIMENSION(:, :, :, :), INTENT(IN)         :: set_offset
+      INTEGER, DIMENSION(:, :), INTENT(IN)               :: atomic_block_offset
+      REAL(dp), DIMENSION(:, :), INTENT(OUT)             :: pmax_atom
+      REAL(dp), DIMENSION(:, :), INTENT(IN), POINTER     :: full_density_alpha, full_density_beta
       INTEGER, INTENT(IN)                                :: natom
-      INTEGER                                            :: kind_of(*)
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      INTEGER                                            :: nkind
-      INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN)     :: basis_parameter
+      INTEGER, INTENT(IN)                                :: nkind
+      INTEGER, DIMENSION(:, :), INTENT(IN)               :: is_assoc_atomic_block
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'update_pmax_mat'
 

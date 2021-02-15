@@ -133,28 +133,28 @@ CONTAINS
                                pmax_atom, i_thread, n_threads, cell, &
                                do_p_screening, map_atom_to_kind_atom, nkind, eval_type, &
                                pmax_block, use_virial)
-      TYPE(hfx_type), POINTER                            :: x_data
+      TYPE(hfx_type), INTENT(INOUT)                      :: x_data
       REAL(dp), INTENT(IN)                               :: eps_schwarz
-      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(particle_type), DIMENSION(:), INTENT(IN)      :: particle_set
       INTEGER, INTENT(IN)                                :: max_set
-      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(cp_para_env_type), INTENT(IN)                 :: para_env
       TYPE(hfx_screen_coeff_type), &
-         DIMENSION(:, :, :, :), POINTER                  :: coeffs_set
+         DIMENSION(:, :, :, :), INTENT(IN)               :: coeffs_set
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
-         POINTER                                         :: coeffs_kind
-      INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block_global
-      LOGICAL                                            :: do_periodic
-      TYPE(hfx_load_balance_type), POINTER               :: load_balance_parameter
-      INTEGER, DIMENSION(:)                              :: kind_of
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
-      REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom
+         INTENT(IN)                                      :: coeffs_kind
+      INTEGER, DIMENSION(:, :), INTENT(IN)               :: is_assoc_atomic_block_global
+      LOGICAL, INTENT(IN)                                :: do_periodic
+      TYPE(hfx_load_balance_type), INTENT(INOUT)         :: load_balance_parameter
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN)     :: basis_parameter
+      TYPE(hfx_p_kind), DIMENSION(:), INTENT(IN)         :: pmax_set
+      REAL(dp), DIMENSION(:, :), INTENT(IN)              :: pmax_atom
       INTEGER, INTENT(IN)                                :: i_thread, n_threads
-      TYPE(cell_type), POINTER                           :: cell
+      TYPE(cell_type), INTENT(IN)                        :: cell
       LOGICAL, INTENT(IN)                                :: do_p_screening
-      INTEGER, DIMENSION(:), POINTER                     :: map_atom_to_kind_atom
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: map_atom_to_kind_atom
       INTEGER, INTENT(IN)                                :: nkind, eval_type
-      REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_block
+      REAL(dp), DIMENSION(:, :), INTENT(INOUT), POINTER  :: pmax_block
       LOGICAL, INTENT(IN)                                :: use_virial
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'hfx_load_balance'
@@ -195,9 +195,7 @@ CONTAINS
          DIMENSION(:)                                    :: set_list_ij, set_list_kl
 
 !$OMP BARRIER
-!$OMP MASTER
       CALL timeset(routineN, handle)
-!$OMP END MASTER
 !$OMP BARRIER
 
       log10_eps_schwarz = LOG10(eps_schwarz)
@@ -461,9 +459,7 @@ CONTAINS
       ELSE
          !! Calculate total numbers of integrals that have to be calculated (wrt screening and symmetry)
 !$OMP BARRIER
-!$OMP MASTER
          CALL timeset(routineN//"_count", handle_inner)
-!$OMP END MASTER
 !$OMP BARRIER
 
          cost_per_core = 0_int_8
@@ -524,9 +520,7 @@ CONTAINS
          cost_per_bin = (cost_per_core + nbins - 1)/(nbins)
 
 !$OMP BARRIER
-!$OMP MASTER
          CALL timestop(handle_inner)
-!$OMP END MASTER
 !$OMP BARRIER
 
 ! new load balancing test
@@ -543,9 +537,7 @@ CONTAINS
          END IF
 
 !$OMP BARRIER
-!$OMP MASTER
          CALL timeset(routineN//"_bin", handle_inner)
-!$OMP END MASTER
 !$OMP BARRIER
 
          ALLOCATE (binned_dist(nbins))
@@ -634,10 +626,8 @@ CONTAINS
          ENDDO
 
 !$OMP BARRIER
-!$OMP MASTER
          CALL timestop(handle_inner)
          CALL timeset(routineN//"_dist", handle_inner)
-!$OMP END MASTER
 !$OMP BARRIER
          !! Fill the last bin if necessary
          IF (last_bin_needs_to_be_filled) THEN
@@ -723,10 +713,8 @@ CONTAINS
 !$OMP BARRIER
 
 !$OMP BARRIER
-!$OMP MASTER
          CALL timestop(handle_inner)
          CALL timeset(routineN//"_opt", handle_inner)
-!$OMP END MASTER
 !$OMP BARRIER
 
          !! Find an optimal distribution i.e. assign each element of the cost matrix to a certain process
@@ -842,15 +830,11 @@ CONTAINS
          DEALLOCATE (set_list_ij, set_list_kl)
 
 !$OMP BARRIER
-!$OMP MASTER
          CALL timestop(handle_inner)
-!$OMP END MASTER
 !$OMP BARRIER
       END IF
 !$OMP BARRIER
-!$OMP MASTER
       CALL timestop(handle)
-!$OMP END MASTER
 !$OMP BARRIER
    END SUBROUTINE hfx_load_balance
 
@@ -910,35 +894,32 @@ CONTAINS
 ! input variables:
       INTEGER, INTENT(IN)                                :: n_processes, my_process_id, nblocks, &
                                                             natom, nkind
-      TYPE(pair_list_type), INTENT(IN)                   :: list_ij, list_kl
-      TYPE(pair_set_list_type), ALLOCATABLE, &
-         DIMENSION(:), INTENT(IN)                        :: set_list_ij, set_list_kl
-      TYPE(particle_type), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: particle_set
+      TYPE(pair_list_type), INTENT(INOUT)                :: list_ij, list_kl
+      TYPE(pair_set_list_type), DIMENSION(:), &
+         INTENT(INOUT)                                   :: set_list_ij, set_list_kl
+      TYPE(particle_type), DIMENSION(:), INTENT(IN)      :: particle_set
       TYPE(hfx_screen_coeff_type), &
-         DIMENSION(:, :, :, :), INTENT(IN), POINTER      :: coeffs_set
+         DIMENSION(:, :, :, :), INTENT(IN)               :: coeffs_set
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
-         INTENT(IN), POINTER                             :: coeffs_kind
+         INTENT(IN)                                      :: coeffs_kind
       INTEGER, DIMENSION(:, :), INTENT(IN)               :: is_assoc_atomic_block_global
       LOGICAL, INTENT(IN)                                :: do_periodic
       INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
-      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: basis_parameter
-      TYPE(hfx_p_kind), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: pmax_set
-      REAL(dp), DIMENSION(:, :), INTENT(IN), POINTER     :: pmax_atom
-      REAL(dp)                                           :: pmax_blocks
-      TYPE(cell_type), INTENT(IN), POINTER               :: cell
-      TYPE(hfx_type), INTENT(IN), POINTER                :: x_data
-      TYPE(cp_para_env_type), INTENT(IN), POINTER        :: para_env
-      REAL(dp), DIMENSION(:, :), INTENT(IN), POINTER     :: pmax_block
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN)     :: basis_parameter
+      TYPE(hfx_p_kind), DIMENSION(:), INTENT(IN)         :: pmax_set
+      REAL(dp), DIMENSION(:, :), INTENT(IN)              :: pmax_atom
+      REAL(dp), INTENT(INOUT)                            :: pmax_blocks
+      TYPE(cell_type), INTENT(IN)                        :: cell
+      TYPE(hfx_type), INTENT(IN)                         :: x_data
+      TYPE(cp_para_env_type), INTENT(IN)                 :: para_env
+      REAL(dp), DIMENSION(:, :), INTENT(IN)              :: pmax_block
       LOGICAL, INTENT(IN)                                :: do_p_screening
-      INTEGER, DIMENSION(:), INTENT(IN), POINTER         :: map_atom_to_kind_atom
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: map_atom_to_kind_atom
       INTEGER, INTENT(IN)                                :: eval_type
       REAL(dp), INTENT(IN)                               :: log10_eps_schwarz, log_2, &
                                                             coeffs_kind_max0
       LOGICAL, INTENT(IN)                                :: use_virial
-      LOGICAL, DIMENSION(:, :), INTENT(IN), POINTER      :: atomic_pair_list
+      LOGICAL, DIMENSION(:, :), INTENT(IN)               :: atomic_pair_list
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'hfx_recursive_load_balance'
 
@@ -954,9 +935,7 @@ CONTAINS
 ! internal variables:
 
 !$OMP BARRIER
-!$OMP MASTER
       CALL timeset(routineN, handle)
-!$OMP END MASTER
 !$OMP BARRIER
 
       ! calculate best p/q distribution grid for the n_processes
@@ -1097,9 +1076,7 @@ CONTAINS
       DEALLOCATE (blocksize, permute)
 
 !$OMP BARRIER
-!$OMP MASTER
       CALL timestop(handle)
-!$OMP END MASTER
 !$OMP BARRIER
 
    END SUBROUTINE hfx_recursive_load_balance
@@ -1216,39 +1193,37 @@ CONTAINS
                                               do_p_screening, map_atom_to_kind_atom, eval_type, &
                                               log10_eps_schwarz, log_2, coeffs_kind_max0, use_virial, atomic_pair_list)
 
-      INTEGER                                            :: nProc_in, blockend, blockstart
-      INTEGER, DIMENSION(nProc_in)                       :: blocksize
-      INTEGER                                            :: nblocks, n_processes, my_process_id
-      INTEGER, INTENT(IN)                                :: step
-      INTEGER, DIMENSION(nblocks*nblocks)                :: permute
-      INTEGER                                            :: natom
-      INTEGER, INTENT(IN)                                :: nkind
-      TYPE(pair_list_type)                               :: list_ij, list_kl
-      TYPE(pair_set_list_type), ALLOCATABLE, &
-         DIMENSION(:)                                    :: set_list_ij, set_list_kl
-      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      INTEGER, INTENT(IN)                                :: nProc_in, blockend, blockstart
+      INTEGER, DIMENSION(nProc_in), INTENT(INOUT)        :: blocksize
+      INTEGER, INTENT(IN)                                :: nblocks, n_processes, my_process_id, step
+      INTEGER, DIMENSION(nblocks*nblocks), INTENT(INOUT) :: permute
+      INTEGER, INTENT(IN)                                :: natom, nkind
+      TYPE(pair_list_type), INTENT(INOUT)                :: list_ij, list_kl
+      TYPE(pair_set_list_type), DIMENSION(:), &
+         INTENT(INOUT)                                   :: set_list_ij, set_list_kl
+      TYPE(particle_type), DIMENSION(:), INTENT(IN)      :: particle_set
       TYPE(hfx_screen_coeff_type), &
-         DIMENSION(:, :, :, :), POINTER                  :: coeffs_set
+         DIMENSION(:, :, :, :), INTENT(IN)               :: coeffs_set
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
-         POINTER                                         :: coeffs_kind
-      INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block_global
-      LOGICAL                                            :: do_periodic
-      INTEGER, DIMENSION(:)                              :: kind_of
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
-      REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom
-      REAL(dp)                                           :: pmax_blocks
-      TYPE(cell_type), POINTER                           :: cell
-      TYPE(hfx_type), POINTER                            :: x_data
-      TYPE(cp_para_env_type), POINTER                    :: para_env
-      REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_block
+         INTENT(IN)                                      :: coeffs_kind
+      INTEGER, DIMENSION(:, :), INTENT(IN)               :: is_assoc_atomic_block_global
+      LOGICAL, INTENT(IN)                                :: do_periodic
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN)     :: basis_parameter
+      TYPE(hfx_p_kind), DIMENSION(:), INTENT(IN)         :: pmax_set
+      REAL(dp), DIMENSION(:, :), INTENT(IN)              :: pmax_atom
+      REAL(dp), INTENT(INOUT)                            :: pmax_blocks
+      TYPE(cell_type), INTENT(IN)                        :: cell
+      TYPE(hfx_type), INTENT(IN)                         :: x_data
+      TYPE(cp_para_env_type), INTENT(IN)                 :: para_env
+      REAL(dp), DIMENSION(:, :), INTENT(IN)              :: pmax_block
       LOGICAL, INTENT(IN)                                :: do_p_screening
-      INTEGER, DIMENSION(:), POINTER                     :: map_atom_to_kind_atom
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: map_atom_to_kind_atom
       INTEGER, INTENT(IN)                                :: eval_type
-      REAL(dp)                                           :: log10_eps_schwarz, log_2, &
+      REAL(dp), INTENT(IN)                               :: log10_eps_schwarz, log_2, &
                                                             coeffs_kind_max0
       LOGICAL, INTENT(IN)                                :: use_virial
-      LOGICAL, DIMENSION(:, :), POINTER                  :: atomic_pair_list
+      LOGICAL, DIMENSION(:, :), INTENT(IN)               :: atomic_pair_list
 
       INTEGER :: col, endoffset, i, iatom_block, iatom_end, iatom_start, idx, inv_perm, &
          jatom_block, jatom_end, jatom_start, katom_block, katom_end, katom_start, latom_block, &
@@ -1486,9 +1461,9 @@ CONTAINS
                                       load_balance_parameter, &
                                       i_thread, n_threads, eval_type)
 
-      TYPE(hfx_type), POINTER                            :: x_data
-      TYPE(cp_para_env_type), POINTER                    :: para_env
-      TYPE(hfx_load_balance_type)                        :: load_balance_parameter
+      TYPE(hfx_type), INTENT(INOUT)                      :: x_data
+      TYPE(cp_para_env_type), INTENT(IN)                 :: para_env
+      TYPE(hfx_load_balance_type), INTENT(IN)            :: load_balance_parameter
       INTEGER, INTENT(IN)                                :: i_thread, n_threads, eval_type
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'hfx_update_load_balance'
@@ -1508,9 +1483,7 @@ CONTAINS
          SAVE                                            :: full_dist
 
 !$OMP BARRIER
-!$OMP MASTER
       CALL timeset(routineN, handle)
-!$OMP END MASTER
 !$OMP BARRIER
 
       ncpu = para_env%num_pe
@@ -1739,9 +1712,7 @@ CONTAINS
          DEALLOCATE (binned_dist, local_cost_matrix)
       END IF
 !$OMP BARRIER
-!$OMP MASTER
       CALL timestop(handle)
-!$OMP END MASTER
 !$OMP BARRIER
 
    END SUBROUTINE hfx_update_load_balance
@@ -1959,31 +1930,32 @@ CONTAINS
                                 atomic_pair_list)
 
       INTEGER, INTENT(IN)                                :: natom, nkind
-      TYPE(pair_list_type)                               :: list_ij, list_kl
-      TYPE(pair_set_list_type), DIMENSION(:)             :: set_list_ij, set_list_kl
+      TYPE(pair_list_type), INTENT(INOUT)                :: list_ij, list_kl
+      TYPE(pair_set_list_type), DIMENSION(:), &
+         INTENT(INOUT)                                   :: set_list_ij, set_list_kl
       INTEGER, INTENT(IN)                                :: iatom_start, iatom_end, jatom_start, &
                                                             jatom_end, katom_start, katom_end, &
                                                             latom_start, latom_end
-      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(particle_type), DIMENSION(:), INTENT(IN)      :: particle_set
       TYPE(hfx_screen_coeff_type), &
-         DIMENSION(:, :, :, :), POINTER                  :: coeffs_set
+         DIMENSION(:, :, :, :), INTENT(IN)               :: coeffs_set
       TYPE(hfx_screen_coeff_type), &
-         DIMENSION(nkind, nkind)                         :: coeffs_kind
-      INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block_global
-      LOGICAL                                            :: do_periodic
-      INTEGER, DIMENSION(:)                              :: kind_of
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
-      REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom
-      REAL(dp)                                           :: pmax_blocks
-      TYPE(cell_type), POINTER                           :: cell
+         DIMENSION(nkind, nkind), INTENT(IN)             :: coeffs_kind
+      INTEGER, DIMENSION(:, :), INTENT(IN)               :: is_assoc_atomic_block_global
+      LOGICAL, INTENT(IN)                                :: do_periodic
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN)     :: basis_parameter
+      TYPE(hfx_p_kind), DIMENSION(:), INTENT(IN)         :: pmax_set
+      REAL(dp), DIMENSION(:, :), INTENT(IN)              :: pmax_atom
+      REAL(dp), INTENT(IN)                               :: pmax_blocks
+      TYPE(cell_type), INTENT(IN)                        :: cell
       LOGICAL, INTENT(IN)                                :: do_p_screening
-      INTEGER, DIMENSION(:), POINTER                     :: map_atom_to_kind_atom
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: map_atom_to_kind_atom
       INTEGER, INTENT(IN)                                :: eval_type
-      REAL(dp)                                           :: log10_eps_schwarz, log_2, &
+      REAL(dp), INTENT(IN)                               :: log10_eps_schwarz, log_2, &
                                                             coeffs_kind_max0
       LOGICAL, INTENT(IN)                                :: use_virial
-      LOGICAL, DIMENSION(natom, natom)                   :: atomic_pair_list
+      LOGICAL, DIMENSION(natom, natom), INTENT(IN)       :: atomic_pair_list
       INTEGER(int_8)                                     :: estimate_block_cost
 
       INTEGER :: i_list_ij, i_list_kl, i_set_list_ij, i_set_list_ij_start, i_set_list_ij_stop, &
@@ -2257,31 +2229,32 @@ CONTAINS
                           atomic_pair_list)
 
       INTEGER, INTENT(IN)                                :: nkind
-      TYPE(cp_para_env_type), POINTER                    :: para_env
-      INTEGER                                            :: natom, block_size, nblock
+      TYPE(cp_para_env_type), INTENT(IN)                 :: para_env
+      INTEGER, INTENT(IN)                                :: natom, block_size, nblock
       TYPE(hfx_block_range_type), DIMENSION(1:nblock)    :: blocks
-      TYPE(pair_list_type)                               :: list_ij, list_kl
-      TYPE(pair_set_list_type), DIMENSION(:)             :: set_list_ij, set_list_kl
-      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pair_list_type), INTENT(INOUT)                :: list_ij, list_kl
+      TYPE(pair_set_list_type), DIMENSION(:), &
+         INTENT(INOUT)                                   :: set_list_ij, set_list_kl
+      TYPE(particle_type), DIMENSION(:), INTENT(IN)      :: particle_set
       TYPE(hfx_screen_coeff_type), &
-         DIMENSION(:, :, :, :), POINTER                  :: coeffs_set
+         DIMENSION(:, :, :, :), INTENT(IN)               :: coeffs_set
       TYPE(hfx_screen_coeff_type), DIMENSION(:, :), &
-         POINTER                                         :: coeffs_kind
-      INTEGER, DIMENSION(:, :)                           :: is_assoc_atomic_block_global
-      LOGICAL                                            :: do_periodic
-      INTEGER, DIMENSION(:)                              :: kind_of
-      TYPE(hfx_basis_type), DIMENSION(:), POINTER        :: basis_parameter
-      TYPE(hfx_p_kind), DIMENSION(:), POINTER            :: pmax_set
-      REAL(dp), DIMENSION(:, :), POINTER                 :: pmax_atom
-      REAL(dp)                                           :: pmax_blocks
-      TYPE(cell_type), POINTER                           :: cell
+         INTENT(IN)                                      :: coeffs_kind
+      INTEGER, DIMENSION(:, :), INTENT(IN)               :: is_assoc_atomic_block_global
+      LOGICAL, INTENT(IN)                                :: do_periodic
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: kind_of
+      TYPE(hfx_basis_type), DIMENSION(:), INTENT(IN)     :: basis_parameter
+      TYPE(hfx_p_kind), DIMENSION(:), INTENT(IN)         :: pmax_set
+      REAL(dp), DIMENSION(:, :), INTENT(IN)              :: pmax_atom
+      REAL(dp), INTENT(IN)                               :: pmax_blocks
+      TYPE(cell_type), INTENT(IN)                        :: cell
       LOGICAL, INTENT(IN)                                :: do_p_screening
-      INTEGER, DIMENSION(:), POINTER                     :: map_atom_to_kind_atom
+      INTEGER, DIMENSION(:), INTENT(IN)                  :: map_atom_to_kind_atom
       INTEGER, INTENT(IN)                                :: eval_type
-      REAL(dp)                                           :: log10_eps_schwarz, log_2, &
+      REAL(dp), INTENT(IN)                               :: log10_eps_schwarz, log_2, &
                                                             coeffs_kind_max0
       LOGICAL, INTENT(IN)                                :: use_virial
-      LOGICAL, DIMENSION(natom, natom)                   :: atomic_pair_list
+      LOGICAL, DIMENSION(natom, natom), INTENT(IN)       :: atomic_pair_list
 
       INTEGER                                            :: atom_block, i, iatom_block, iatom_end, &
                                                             iatom_start, my_cpu_rank, ncpus

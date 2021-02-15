@@ -2407,8 +2407,8 @@ CONTAINS
 !> \author Manuel Guidon
 ! **************************************************************************************************
    SUBROUTINE hfx_set_distr_energy(ptr_to_distr, x_data)
-      TYPE(hfx_distribution), DIMENSION(:), POINTER      :: ptr_to_distr
-      TYPE(hfx_type), POINTER                            :: x_data
+      TYPE(hfx_distribution), DIMENSION(:), INTENT(IN)   :: ptr_to_distr
+      TYPE(hfx_type), INTENT(INOUT)                      :: x_data
 
       DEALLOCATE (x_data%distribution_energy)
 
@@ -2427,8 +2427,8 @@ CONTAINS
 !> \author Manuel Guidon
 ! **************************************************************************************************
    SUBROUTINE hfx_set_distr_forces(ptr_to_distr, x_data)
-      TYPE(hfx_distribution), DIMENSION(:), POINTER      :: ptr_to_distr
-      TYPE(hfx_type), POINTER                            :: x_data
+      TYPE(hfx_distribution), DIMENSION(:), INTENT(IN)   :: ptr_to_distr
+      TYPE(hfx_type), INTENT(INOUT)                      :: x_data
 
       DEALLOCATE (x_data%distribution_forces)
 
