@@ -154,26 +154,25 @@ CONTAINS
       CHARACTER(len=default_string_length)               :: eps_scaling_str, eps_schwarz_min_str
       INTEGER :: act_atomic_block_offset, act_set_offset, atomic_offset_ac, atomic_offset_ad, &
          atomic_offset_bc, atomic_offset_bd, bin, bits_max_val, buffer_left, buffer_size, &
-         buffer_start, cache_size, current_counter, handle, handle_bin, handle_dist_ks, &
-         handle_getP, handle_load, handle_main, i, i_list_ij, i_list_kl, i_set_list_ij, &
-         i_set_list_ij_start, i_set_list_ij_stop, i_set_list_kl, i_set_list_kl_start, &
-         i_set_list_kl_stop, i_thread, iatom, iatom_block, iatom_end, iatom_start, ikind, img, &
-         iset, iw, j, jatom, jatom_block, jatom_end, jatom_start, jkind, jset, katom, katom_block, &
-         katom_end
-      INTEGER :: katom_start, kind_kind_idx, kkind, kp_idx_q, kp_idx_t, kset, l_max, latom, &
-         latom_block, latom_end, latom_start, lkind, lset, ma, max_pgf, max_set, mb, my_bin_id, &
-         my_bin_size, my_thread_id, n_threads, natom, nbidx, nbits, ncoa, ncob, ncos_max, nints, &
-         nkimages, nkind, nneighbors, nseta, nsetb, nsgf_max, pa, sgfa, shm_number_of_p_entries, &
-         shm_task_counter, shm_total_bins, sphi_a_u1, sphi_a_u2, sphi_a_u3, sphi_b_u1, sphi_b_u2, &
-         sphi_b_u3, sphi_c_u1, sphi_c_u2, sphi_c_u3, sphi_d_u1, sphi_d_u2, sphi_d_u3, swap_id, &
-         tmp_i4, unit_id
+         buffer_start, cache_size, handle, handle_bin, handle_dist_ks, handle_getP, handle_load, &
+         handle_main, i, i_list_ij, i_list_kl, i_set_list_ij, i_set_list_ij_start, &
+         i_set_list_ij_stop, i_set_list_kl, i_set_list_kl_start, i_set_list_kl_stop, i_thread, &
+         iatom, iatom_block, iatom_end, iatom_start, ikind, img, iset, iw, j, jatom, jatom_block, &
+         jatom_end, jatom_start, jkind, jset, katom, katom_block, katom_end, katom_start
+      INTEGER :: kind_kind_idx, kkind, kp_idx_q, kp_idx_t, kset, l_max, latom, latom_block, &
+         latom_end, latom_start, lkind, lset, ma, max_pgf, max_set, mb, my_bin_id, my_bin_size, &
+         my_task_counter, my_thread_id, n_threads, natom, nbidx, nbits, ncoa, ncob, ncos_max, &
+         nints, nkimages, nkind, nneighbors, nseta, nsetb, nsgf_max, pa, sgfa, &
+         shm_number_of_p_entries, shm_task_counter, shm_total_bins, sphi_a_u1, sphi_a_u2, &
+         sphi_a_u3, sphi_b_u1, sphi_b_u2, sphi_b_u3, sphi_c_u1, sphi_c_u2, sphi_c_u3, sphi_d_u1, &
+         sphi_d_u2, sphi_d_u3, swap_id, tmp_i4, unit_id
       INTEGER(int_8) :: atom_block, counter, estimate_to_store_int, max_val_memory, &
          mb_size_buffers, mb_size_p, mem_compression_counter, mem_compression_counter_disk, &
-         mem_eris, mem_eris_disk, mem_max_val, memsize_after, memsize_before, my_current_counter, &
-         my_istart, n_processes, nblocks, ncpu, neris_coulomb, shm_mem_compression_counter, &
-         shm_neris_disk, shm_neris_incore, shm_neris_onthefly, shm_neris_total, shm_nprim_ints, &
-         shm_stor_count_int_disk, shm_stor_count_max_val, shm_stor_counter_integrals, &
-         subtr_size_mb, tmp_block, tmp_i8(8)
+         mem_eris, mem_eris_disk, mem_max_val, memsize_after, memsize_before, my_istart, &
+         my_quartet_counter, n_processes, nblocks, ncpu, neris_coulomb, &
+         shm_mem_compression_counter, shm_neris_disk, shm_neris_incore, shm_neris_onthefly, &
+         shm_neris_total, shm_nprim_ints, shm_stor_count_int_disk, shm_stor_count_max_val, &
+         shm_stor_counter_integrals, subtr_size_mb, tmp_block, tmp_i8(8)
       INTEGER(int_8), ALLOCATABLE, DIMENSION(:)          :: tmp_task_list_cost
       INTEGER, ALLOCATABLE, DIMENSION(:)                 :: kind_of, tmp_index
       INTEGER, DIMENSION(:), POINTER :: la_max, la_min, lb_max, lb_min, lc_max, lc_min, ld_max, &
@@ -182,10 +181,9 @@ CONTAINS
          offset_ac_set, offset_ad_set, offset_bc_set, offset_bd_set, shm_atomic_block_offset, &
          shm_is_assoc_atomic_block
       INTEGER, DIMENSION(:, :, :, :), POINTER            :: shm_set_offset
-      LOGICAL :: bins_left, buffer_overflow, do_disk_storage, do_dynamic_load_balancing, do_it, &
-         do_kpoints, do_p_screening, do_p_screening_forces, do_periodic, &
-         do_print_load_balance_info, is_anti_symmetric, is_unrestricted, my_geo_change, &
-         treat_lsd_in_core, use_disk_storage
+      LOGICAL :: buffer_overflow, do_disk_storage, do_dynamic_load_balancing, do_kpoints, &
+         do_p_screening, do_p_screening_forces, do_periodic, do_print_load_balance_info, &
+         is_anti_symmetric, is_unrestricted, my_geo_change, treat_lsd_in_core, use_disk_storage
       LOGICAL, DIMENSION(:, :), POINTER                  :: shm_atomic_pair_list
       REAL(dp) :: afac, bintime_start, bintime_stop, cartesian_estimate, compression_factor, &
          compression_factor_disk, ene_x_aa, ene_x_aa_diag, ene_x_bb, ene_x_bb_diag, eps_schwarz, &
@@ -771,13 +769,13 @@ CONTAINS
 !$OMP         nseta,npgfa,la_max,nsgfa,primitive_integrals,pbd_buf,pbc_buf,pad_buf,pac_buf,kbd_buf,kbc_buf,&
 !$OMP         kad_buf,kac_buf,ee_work,ee_work2,ee_buffer1,ee_buffer2,ee_primitives_tmp,&
 !$OMP         jkind,lb_max,nsetb,npgfb,nsgfb,ncob,pgf_list_ij,pgf_list_kl,&
-!$OMP         pgf_product_list,use_disk_storage,counter,&
+!$OMP         pgf_product_list,use_disk_storage,counter,my_task_counter,&
 !$OMP         maxval_container_disk,maxval_cache_disk,integral_containers_disk,integral_caches_disk,&
 !$OMP         eps_storage,buffer_overflow,private_lib,handle_getp,&
 !$OMP         handle_load,my_bin_size,maxval_container,integral_containers,maxval_cache,&
 !$OMP         integral_caches,tmp_task_list,tmp_task_list_cost,tmp_index,handle_main,iset,jset,set_list_ij,&
-!$OMP         set_list_kl,iatom,iatom_start,iatom_end,jatom,jatom_start,jatom_end,nblocks,bins_left,do_it,distribution_energy,&
-!$OMP         my_thread_id,my_bin_id,handle_bin,bintime_start,my_istart,my_current_counter,latom_block,tmp_block,&
+!$OMP         set_list_kl,iatom,iatom_start,iatom_end,jatom,jatom_start,jatom_end,nblocks,distribution_energy,&
+!$OMP         my_thread_id,my_bin_id,handle_bin,bintime_start,my_istart,my_quartet_counter,latom_block,tmp_block,&
 !$OMP         katom_block,katom_start,katom_end,latom_start,latom_end,pmax_blocks,list_ij,list_kl,i_set_list_ij_start,&
 !$OMP         i_set_list_ij_stop,ra,rb,rab2,la_min,zeta,sphi_a_ext,nsgfl_a,sphi_a_u1,sphi_a_u2,sphi_a_u3,&
 !$OMP         lb_min,zetb,sphi_b_ext,nsgfl_b,sphi_b_u1,sphi_b_u2,sphi_b_u3,katom,latom,i_set_list_kl_start,i_set_list_kl_stop,&
@@ -786,7 +784,7 @@ CONTAINS
 !$OMP         sphi_d_u3,atomic_offset_bd,atomic_offset_bc,atomic_offset_ad,atomic_offset_ac,offset_bd_set,offset_bc_set,&
 !$OMP         offset_ad_set,offset_ac_set,swap_id,kind_kind_idx,ptr_p_1,ptr_p_2,ptr_p_3,ptr_p_4,mem_compression_counter,&
 !$OMP         mem_compression_counter_disk,max_val1,sphi_a_ext_set,sphi_b_ext_set,kset,lset,max_val2_set,max_val2,&
-!$OMP         sphi_c_ext_set,sphi_d_ext_set,pmax_entry,log10_pmax,current_counter,nints,estimate_to_store_int,&
+!$OMP         sphi_c_ext_set,sphi_d_ext_set,pmax_entry,log10_pmax,nints,estimate_to_store_int,&
 !$OMP         spherical_estimate,nbits,buffer_left,buffer_start,buffer_size,max_contraction_val,tmp_r_1,tmp_r_2,&
 !$OMP         tmp_screen_pgf1,tmp_screen_pgf2,cartesian_estimate,bintime_stop,iw,j,tmp_i4,&
 !$OMP         bin,eps_scaling_str,eps_schwarz_min_str,nbidx,kp_idx_q,kp_idx_t,iatom_block,jatom_block) &
@@ -992,56 +990,51 @@ CONTAINS
       !! lstart only the first time the loop is executed. All subsequent loops have to start with one or
       !! iatom and katom respectively. Therefore, we use flags like first_j_loop etc.
 
-      bins_left = .TRUE.
-      do_it = .TRUE.
       bin = 0
       CALL timeset(routineN//"_bin", handle_bin)
 
-      DO WHILE (bins_left)
+      DO
          IF (.NOT. do_dynamic_load_balancing) THEN
             bin = bin + 1
-            IF (bin > my_bin_size) THEN
-               do_it = .FALSE.
-               bins_left = .FALSE.
-            ELSE
-               do_it = .TRUE.
-               bins_left = .TRUE.
-               distribution_energy => actual_x_data%distribution_energy(bin)
-            END IF
-         ELSE
-!$OMP CRITICAL(hfxenergy_critical)
-            shm_task_counter = shm_task_counter + 1
-            IF (shm_task_counter <= shm_total_bins) THEN
-               my_thread_id = shm_task_list(shm_task_counter)%thread_id
-               my_bin_id = shm_task_list(shm_task_counter)%bin_id
-               IF (.NOT. memory_parameter%do_all_on_the_fly) THEN
-                  maxval_cache => x_data(irep, my_thread_id)%store_ints%maxval_cache(my_bin_id)
-                  maxval_container => x_data(irep, my_thread_id)%store_ints%maxval_container(my_bin_id)
-                  integral_caches => x_data(irep, my_thread_id)%store_ints%integral_caches(:, my_bin_id)
-                  integral_containers => x_data(irep, my_thread_id)%store_ints%integral_containers(:, my_bin_id)
-               ENDIF
-               distribution_energy => x_data(irep, my_thread_id)%distribution_energy(my_bin_id)
-               do_it = .TRUE.
-               bins_left = .TRUE.
-               IF (my_geo_change) THEN
-                  distribution_energy%ram_counter = HUGE(distribution_energy%ram_counter)
-               END IF
-               counter = 0_Int_8
-            ELSE
-               do_it = .FALSE.
-               bins_left = .FALSE.
-            END IF
-!$OMP END CRITICAL(hfxenergy_critical)
-         END IF
+            IF (bin > my_bin_size) &
+               EXIT
 
-         IF (.NOT. do_it) CYCLE
+            distribution_energy => actual_x_data%distribution_energy(bin)
+         ELSE
+
+!$OMP ATOMIC CAPTURE
+            shm_task_counter = shm_task_counter + 1
+            my_task_counter = shm_task_counter
+!$OMP END ATOMIC
+
+            IF (my_task_counter > shm_total_bins) &
+               EXIT
+
+            my_thread_id = shm_task_list(my_task_counter)%thread_id
+            my_bin_id = shm_task_list(my_task_counter)%bin_id
+
+            distribution_energy => x_data(irep, my_thread_id)%distribution_energy(my_bin_id)
+            counter = 0_Int_8
+
+            IF (.NOT. memory_parameter%do_all_on_the_fly) THEN
+               maxval_cache => x_data(irep, my_thread_id)%store_ints%maxval_cache(my_bin_id)
+               maxval_container => x_data(irep, my_thread_id)%store_ints%maxval_container(my_bin_id)
+               integral_caches => x_data(irep, my_thread_id)%store_ints%integral_caches(:, my_bin_id)
+               integral_containers => x_data(irep, my_thread_id)%store_ints%integral_containers(:, my_bin_id)
+            ENDIF
+
+            IF (my_geo_change) &
+               distribution_energy%ram_counter = HUGE(distribution_energy%ram_counter)
+         END IF
 
          bintime_start = m_walltime()
          my_istart = distribution_energy%istart
-         my_current_counter = 0
-         IF (distribution_energy%number_of_atom_quartets == 0 .OR. &
-             my_istart == -1_int_8) my_istart = nblocks**4
-         atomic_blocks: DO atom_block = my_istart, nblocks**4 - 1, n_processes
+         my_quartet_counter = 0
+
+         IF (distribution_energy%number_of_atom_quartets == 0 .OR. my_istart == -1_int_8) &
+            my_istart = nblocks**4
+
+         DO atom_block = my_istart, nblocks**4 - 1, n_processes
             latom_block = INT(MODULO(atom_block, nblocks)) + 1
             tmp_block = atom_block/nblocks
             katom_block = INT(MODULO(tmp_block, nblocks)) + 1
@@ -1052,8 +1045,9 @@ CONTAINS
             iatom_block = INT(MODULO(tmp_block, nblocks)) + 1
             IF (jatom_block < iatom_block) CYCLE
 
-            my_current_counter = my_current_counter + 1
-            IF (my_current_counter > distribution_energy%number_of_atom_quartets) EXIT atomic_blocks
+            my_quartet_counter = my_quartet_counter + 1
+            IF (my_quartet_counter > distribution_energy%number_of_atom_quartets) &
+               EXIT
 
             iatom_start = actual_x_data%blocks(iatom_block)%istart
             iatom_end = actual_x_data%blocks(iatom_block)%iend
@@ -1069,7 +1063,8 @@ CONTAINS
                               shm_pmax_block(latom_block, iatom_block), &
                               shm_pmax_block(katom_block, jatom_block))
 
-            IF (2.0_dp*coeffs_kind_max0 + pmax_blocks < log10_eps_schwarz) CYCLE
+            IF (2.0_dp*coeffs_kind_max0 + pmax_blocks < log10_eps_schwarz) &
+               CYCLE
 
             CALL build_pair_list(list_ij, set_list_ij, iatom_start, iatom_end, &
                                  jatom_start, jatom_end, &
@@ -1317,7 +1312,7 @@ CONTAINS
                   END IF
 
                   IF (use_disk_storage) THEN
-!$OMP               ATOMIC READ
+!$OMP                ATOMIC READ
                      tmp_i4 = memory_parameter%actual_memory_usage_disk
                      mem_compression_counter_disk = tmp_i4*memory_parameter%cache_size
                      IF (mem_compression_counter_disk > memory_parameter%max_compression_counter_disk) THEN
@@ -1333,23 +1328,21 @@ CONTAINS
                      ncob = npgfb(jset)*ncoset(lb_max(jset))
                      max_val1 = screen_coeffs_set(jset, iset, jkind, ikind)%x(1)*rab2 + &
                                 screen_coeffs_set(jset, iset, jkind, ikind)%x(2)
-
                      IF (max_val1 + screen_kind_kl + pmax_atom < log10_eps_schwarz) CYCLE
 
                      sphi_a_ext_set => sphi_a_ext(:, :, :, iset)
                      sphi_b_ext_set => sphi_b_ext(:, :, :, jset)
+
                      DO i_set_list_kl = i_set_list_kl_start, i_set_list_kl_stop
                         kset = set_list_kl(i_set_list_kl)%pair(1)
                         lset = set_list_kl(i_set_list_kl)%pair(2)
 
+                        !! Near field screening
                         max_val2_set = (screen_coeffs_set(lset, kset, lkind, kkind)%x(1)*rcd2 + &
                                         screen_coeffs_set(lset, kset, lkind, kkind)%x(2))
                         max_val2 = max_val1 + max_val2_set
-
-                        !! Near field screening
                         IF (max_val2 + pmax_atom < log10_eps_schwarz) CYCLE
-                        sphi_c_ext_set => sphi_c_ext(:, :, :, kset)
-                        sphi_d_ext_set => sphi_d_ext(:, :, :, lset)
+
                         !! get max_vals if we screen on initial density
                         IF (do_p_screening) THEN
                            log10_pmax = get_pmax_val(ptr_p_1, ptr_p_2, ptr_p_3, ptr_p_4, &
@@ -1359,13 +1352,17 @@ CONTAINS
                         END IF
                         max_val2 = max_val2 + log10_pmax
                         IF (max_val2 < log10_eps_schwarz) CYCLE
+
                         pmax_entry = EXP(log10_pmax*ln_10)
 
                         !! store current number of integrals, update total number and number of integrals in buffer
-                        current_counter = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
-                        IF (buffer_overflow) THEN
-                           shm_neris_onthefly = shm_neris_onthefly + current_counter
-                        END IF
+                        nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
+
+                        IF (buffer_overflow) &
+                           shm_neris_onthefly = shm_neris_onthefly + nints
+
+                        sphi_c_ext_set => sphi_c_ext(:, :, :, kset)
+                        sphi_d_ext_set => sphi_d_ext(:, :, :, lset)
 
                         DO kp_idx_t = 1, nkimages
                         DO kp_idx_q = 1, nkimages
@@ -1440,7 +1437,6 @@ CONTAINS
                                                do_periodic)
                               END IF
 
-                              nints = nsgfa(iset)*nsgfb(jset)*nsgfc(kset)*nsgfd(lset)
                               shm_neris_total = shm_neris_total + nints
                               shm_nprim_ints = shm_nprim_ints + neris_coulomb
 
@@ -1466,8 +1462,10 @@ CONTAINS
                                        use_disk_storage)
                                  END IF
                               END IF
+
                               spherical_estimate = SET_EXPONENT(1.0_dp, estimate_to_store_int + 1)
                               IF (spherical_estimate*pmax_entry < eps_schwarz) CYCLE
+
                               IF (.NOT. buffer_overflow) THEN
                                  nbits = EXPONENT(ANINT(spherical_estimate*pmax_entry/eps_storage)) + 1
 
@@ -1499,11 +1497,13 @@ CONTAINS
 
                                  buffer_left = nints
                                  buffer_start = 1
-                                 IF (.NOT. use_disk_storage) THEN
-                                    shm_neris_incore = shm_neris_incore + INT(nints, int_8)
-                                 ELSE
+
+                                 IF (use_disk_storage) THEN
                                     shm_neris_disk = shm_neris_disk + INT(nints, int_8)
+                                 ELSE
+                                    shm_neris_incore = shm_neris_incore + INT(nints, int_8)
                                  END IF
+
                                  DO WHILE (buffer_left > 0)
                                     buffer_size = MIN(buffer_left, CACHE_SIZE)
                                     IF (.NOT. use_disk_storage) THEN
@@ -1539,7 +1539,6 @@ CONTAINS
                               END IF
 
                            ELSE  !! Get integrals from buffer instead of calculating them:
-                              nints = current_counter
                               IF (.NOT. use_disk_storage) THEN
                                  CALL hfx_get_single_cache_element( &
                                     estimate_to_store_int, 6, &
@@ -1638,7 +1637,7 @@ CONTAINS
                   END IF
                END DO !i_list_ij
             END DO !i_list_kl
-         END DO atomic_blocks
+         END DO !atom_block
          bintime_stop = m_walltime()
          IF (my_geo_change) THEN
             distribution_energy%time_first_scf = bintime_stop - bintime_start
@@ -2106,7 +2105,8 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE coulomb4(lib, ra, rb, rc, rd, npgfa, npgfb, npgfc, npgfd, &
                        la_min, la_max, lb_min, lb_max, &
-                       lc_min, lc_max, ld_min, ld_max, nsgfa, nsgfb, nsgfc, nsgfd, &
+                       lc_min, lc_max, ld_min, ld_max, &
+                       nsgfa, nsgfb, nsgfc, nsgfd, &
                        sphi_a_u1, sphi_a_u2, sphi_a_u3, &
                        sphi_b_u1, sphi_b_u2, sphi_b_u3, &
                        sphi_c_u1, sphi_c_u2, sphi_c_u3, &
