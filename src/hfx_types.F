@@ -210,13 +210,13 @@ MODULE hfx_types
 
 ! **************************************************************************************************
    TYPE hfx_distribution
-      INTEGER(int_8)                           :: istart
-      INTEGER(int_8)                           :: number_of_atom_quartets
-      INTEGER(int_8)                           :: cost
-      REAL(KIND=dp)                            :: time_first_scf
-      REAL(KIND=dp)                            :: time_other_scf
-      REAL(KIND=dp)                            :: time_forces
-      INTEGER(int_8)                           :: ram_counter
+      INTEGER(int_8)                           :: istart = 0_int_8
+      INTEGER(int_8)                           :: number_of_atom_quartets = 0_int_8
+      INTEGER(int_8)                           :: cost = 0_int_8
+      REAL(KIND=dp)                            :: time_first_scf = 0.0_dp
+      REAL(KIND=dp)                            :: time_other_scf = 0.0_dp
+      REAL(KIND=dp)                            :: time_forces = 0.0_dp
+      INTEGER(int_8)                           :: ram_counter = 0_int_8
    END TYPE
 
 ! **************************************************************************************************

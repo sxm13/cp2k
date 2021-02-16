@@ -574,18 +574,18 @@ CONTAINS
       !! Load balance the work
       IF (actual_x_data%memory_parameter%recalc_forces) THEN
          IF (actual_x_data%b_first_load_balance_forces) THEN
-            CALL hfx_load_balance(actual_x_data, eps_schwarz, particle_set, max_set, para_env, &
+            CALL hfx_load_balance(qs_env%x_data(irep, i_thread + 1:i_thread + 1), eps_schwarz, particle_set, max_set, para_env, &
                                   screen_coeffs_set, screen_coeffs_kind, &
                                   shm_is_assoc_atomic_block, do_periodic, &
-                                  load_balance_parameter, kind_of, basis_parameter, shm_initial_p, &
-                                  shm_pmax_atom, i_thread, n_threads, &
+                                  qs_env%x_data(irep, i_thread + 1:i_thread + 1)%load_balance_parameter, kind_of, basis_parameter, &
+                                  shm_initial_p, shm_pmax_atom, &
                                   cell, screen_pmat_forces, actual_x_data%map_atom_to_kind_atom, &
-                                  nkind, hfx_do_eval_forces, shm_pmax_block, use_virial)
+                                  nkind, hfx_do_eval_forces, use_virial)
             actual_x_data%b_first_load_balance_forces = .FALSE.
          ELSE
-            CALL hfx_update_load_balance(actual_x_data, para_env, &
-                                         load_balance_parameter, &
-                                         i_thread, n_threads, hfx_do_eval_forces)
+            ! update_load_balance only needs a subset of infos from load_balance_parameter, and this data is the same across all threads
+            CALL hfx_update_load_balance(qs_env%x_data(irep, i_thread + 1:i_thread + 1), para_env, &
+                                         load_balance_parameter, hfx_do_eval_forces)
          END IF
       END IF
 !$OMP MASTER

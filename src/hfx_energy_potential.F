@@ -579,6 +579,94 @@ CONTAINS
 
       coeffs_kind_max0 = MAXVAL(screen_coeffs_kind(:, :)%x(2))
 
+      !! Call routines that distribute the load on all processes. If we want to screen on a initial density matrix, there is
+      !! an optional parameter. Of course, this is only done if the geometry did change
+      CALL timeset(routineN//"_load", handle_load)
+
+      IF (my_geo_change) THEN
+         IF (shm_master_x_data%b_first_load_balance_energy) THEN
+            CALL hfx_load_balance(x_data(irep, :), eps_schwarz, particle_set, max_set, para_env, &
+                                  screen_coeffs_set, screen_coeffs_kind, &
+                                  shm_is_assoc_atomic_block, do_periodic, x_data(irep, :)%load_balance_parameter, &
+                                  kind_of, basis_parameter, shm_initial_p, shm_pmax_atom, &
+                                  cell, do_p_screening, shm_master_x_data%map_atom_to_kind_atom, &
+                                  nkind, hfx_do_eval_energy, use_virial=.FALSE.)
+            shm_master_x_data%b_first_load_balance_energy = .FALSE.
+         ELSE
+            CALL hfx_update_load_balance(x_data(irep, :), para_env, &
+                                         shm_master_x_data%load_balance_parameter, &
+                                         hfx_do_eval_energy)
+         END IF
+      END IF
+
+      IF (do_dynamic_load_balancing) THEN
+         ! ** Lets construct the task list
+         shm_total_bins = 0
+         DO i = 1, n_threads
+            shm_total_bins = shm_total_bins + SIZE(x_data(irep, i)%distribution_energy)
+         END DO
+         ALLOCATE (tmp_task_list(shm_total_bins))
+         shm_task_counter = 0
+         DO i = 1, n_threads
+            DO bin = 1, SIZE(x_data(irep, i)%distribution_energy)
+               shm_task_counter = shm_task_counter + 1
+               tmp_task_list(shm_task_counter)%thread_id = i
+               tmp_task_list(shm_task_counter)%bin_id = bin
+               tmp_task_list(shm_task_counter)%cost = x_data(irep, i)%distribution_energy(bin)%cost
+            END DO
+         END DO
+
+         ! ** Now sort the task list
+         ALLOCATE (tmp_task_list_cost(shm_total_bins))
+         ALLOCATE (tmp_index(shm_total_bins))
+
+         DO i = 1, shm_total_bins
+            tmp_task_list_cost(i) = tmp_task_list(i)%cost
+         END DO
+
+         CALL sort(tmp_task_list_cost, shm_total_bins, tmp_index)
+
+         ALLOCATE (shm_master_x_data%task_list(shm_total_bins))
+
+         DO i = 1, shm_total_bins
+            shm_master_x_data%task_list(i) = tmp_task_list(tmp_index(shm_total_bins - i + 1))
+         END DO
+
+         shm_task_list => shm_master_x_data%task_list
+         shm_task_counter = 0
+
+         DEALLOCATE (tmp_task_list_cost, tmp_index, tmp_task_list)
+      END IF
+
+      !! precalculate maximum density matrix elements in blocks
+      shm_master_x_data%pmax_block = 0.0_dp
+      shm_pmax_block => shm_master_x_data%pmax_block
+      IF (do_p_screening) THEN
+         DO iatom_block = 1, SIZE(shm_master_x_data%blocks)
+            iatom_start = shm_master_x_data%blocks(iatom_block)%istart
+            iatom_end = shm_master_x_data%blocks(iatom_block)%iend
+            DO jatom_block = 1, SIZE(shm_master_x_data%blocks)
+               jatom_start = shm_master_x_data%blocks(jatom_block)%istart
+               jatom_end = shm_master_x_data%blocks(jatom_block)%iend
+               shm_pmax_block(iatom_block, jatom_block) = MAXVAL(shm_pmax_atom(iatom_start:iatom_end, jatom_start:jatom_end))
+            END DO
+         END DO
+      END IF
+      shm_atomic_pair_list => shm_master_x_data%atomic_pair_list
+      IF (my_geo_change) &
+         CALL build_atomic_pair_list(shm_atomic_pair_list, kind_of, basis_parameter, particle_set, &
+                                     do_periodic, screen_coeffs_kind, coeffs_kind_max0, log10_eps_schwarz, cell, &
+                                     shm_master_x_data%blocks)
+
+      ! reset timings for the new SCF round
+      IF (my_geo_change) THEN
+         shm_master_x_data%distribution_energy(:)%time_first_scf = 0.0_dp
+         shm_master_x_data%distribution_energy(:)%time_other_scf = 0.0_dp
+         shm_master_x_data%distribution_energy(:)%time_forces = 0.0_dp
+      ENDIF
+
+      CALL timestop(handle_load)
+
       ! Reset storage counter given by MAX_MEMORY by subtracting all buffers
       ! Fock and density Matrices (shared)
       subtr_size_mb = 2_int_8*shm_block_offset(ncpu + 1)
@@ -788,34 +876,6 @@ CONTAINS
 
       private_lib = actual_x_data%lib
 
-      !! Call routines that distribute the load on all processes. If we want to screen on a initial density matrix, there is
-      !! an optional parameter. Of course, this is only done if the geometry did change
-!$OMP BARRIER
-!$OMP MASTER
-      CALL timeset(routineN//"_load", handle_load)
-!$OMP END MASTER
-!$OMP BARRIER
-      IF (my_geo_change) THEN
-         IF (actual_x_data%b_first_load_balance_energy) THEN
-            CALL hfx_load_balance(actual_x_data, eps_schwarz, particle_set, max_set, para_env, &
-                                  screen_coeffs_set, screen_coeffs_kind, &
-                                  shm_is_assoc_atomic_block, do_periodic, load_balance_parameter, &
-                                  kind_of, basis_parameter, shm_initial_p, shm_pmax_atom, i_thread, n_threads, &
-                                  cell, do_p_screening, actual_x_data%map_atom_to_kind_atom, &
-                                  nkind, hfx_do_eval_energy, shm_pmax_block, use_virial=.FALSE.)
-            actual_x_data%b_first_load_balance_energy = .FALSE.
-         ELSE
-            CALL hfx_update_load_balance(actual_x_data, para_env, &
-                                         load_balance_parameter, &
-                                         i_thread, n_threads, hfx_do_eval_energy)
-         END IF
-      END IF
-!$OMP BARRIER
-!$OMP MASTER
-      CALL timestop(handle_load)
-!$OMP END MASTER
-!$OMP BARRIER
-
       IF (do_dynamic_load_balancing) THEN
          my_bin_size = SIZE(actual_x_data%distribution_energy)
       ELSE
@@ -876,49 +936,6 @@ CONTAINS
       END IF
 
 !$OMP BARRIER
-!$OMP MASTER
-
-      IF (do_dynamic_load_balancing) THEN
-         ! ** Lets construct the task list
-         shm_total_bins = 0
-         DO i = 1, n_threads
-            shm_total_bins = shm_total_bins + SIZE(x_data(irep, i)%distribution_energy)
-         END DO
-         ALLOCATE (tmp_task_list(shm_total_bins))
-         shm_task_counter = 0
-         DO i = 1, n_threads
-            DO bin = 1, SIZE(x_data(irep, i)%distribution_energy)
-               shm_task_counter = shm_task_counter + 1
-               tmp_task_list(shm_task_counter)%thread_id = i
-               tmp_task_list(shm_task_counter)%bin_id = bin
-               tmp_task_list(shm_task_counter)%cost = x_data(irep, i)%distribution_energy(bin)%cost
-            END DO
-         END DO
-
-         ! ** Now sort the task list
-         ALLOCATE (tmp_task_list_cost(shm_total_bins))
-         ALLOCATE (tmp_index(shm_total_bins))
-
-         DO i = 1, shm_total_bins
-            tmp_task_list_cost(i) = tmp_task_list(i)%cost
-         END DO
-
-         CALL sort(tmp_task_list_cost, shm_total_bins, tmp_index)
-
-         ALLOCATE (shm_master_x_data%task_list(shm_total_bins))
-
-         DO i = 1, shm_total_bins
-            shm_master_x_data%task_list(i) = tmp_task_list(tmp_index(shm_total_bins - i + 1))
-         END DO
-
-         shm_task_list => shm_master_x_data%task_list
-         shm_task_counter = 0
-
-         DEALLOCATE (tmp_task_list_cost, tmp_index, tmp_task_list)
-      END IF
-!$OMP END MASTER
-!$OMP BARRIER
-
       IF (my_bin_size > 0) THEN
          maxval_container => actual_x_data%store_ints%maxval_container(1)
          maxval_cache => actual_x_data%store_ints%maxval_cache(1)
@@ -928,49 +945,11 @@ CONTAINS
       END IF
 
 !$OMP BARRIER
-!$OMP MASTER
       CALL timeset(routineN//"_main", handle_main)
-!$OMP END MASTER
 !$OMP BARRIER
 
       ALLOCATE (set_list_ij((max_set*load_balance_parameter%block_size)**2))
       ALLOCATE (set_list_kl((max_set*load_balance_parameter%block_size)**2))
-
-!$OMP BARRIER
-!$OMP MASTER
-
-      !! precalculate maximum density matrix elements in blocks
-      actual_x_data%pmax_block = 0.0_dp
-      shm_pmax_block => actual_x_data%pmax_block
-      IF (do_p_screening) THEN
-         DO iatom_block = 1, SIZE(actual_x_data%blocks)
-            iatom_start = actual_x_data%blocks(iatom_block)%istart
-            iatom_end = actual_x_data%blocks(iatom_block)%iend
-            DO jatom_block = 1, SIZE(actual_x_data%blocks)
-               jatom_start = actual_x_data%blocks(jatom_block)%istart
-               jatom_end = actual_x_data%blocks(jatom_block)%iend
-               shm_pmax_block(iatom_block, jatom_block) = MAXVAL(shm_pmax_atom(iatom_start:iatom_end, jatom_start:jatom_end))
-            END DO
-         END DO
-      END IF
-      shm_atomic_pair_list => actual_x_data%atomic_pair_list
-      IF (my_geo_change) THEN
-         CALL build_atomic_pair_list(shm_atomic_pair_list, kind_of, basis_parameter, particle_set, &
-                                     do_periodic, screen_coeffs_kind, coeffs_kind_max0, log10_eps_schwarz, cell, &
-                                     actual_x_data%blocks)
-      END IF
-
-      my_bin_size = SIZE(actual_x_data%distribution_energy)
-      ! reset timings for the new SCF round
-      IF (my_geo_change) THEN
-         DO bin = 1, my_bin_size
-            actual_x_data%distribution_energy(bin)%time_first_scf = 0.0_dp
-            actual_x_data%distribution_energy(bin)%time_other_scf = 0.0_dp
-            actual_x_data%distribution_energy(bin)%time_forces = 0.0_dp
-         END DO
-      ENDIF
-!$OMP END MASTER
-!$OMP BARRIER
 
       my_bin_size = SIZE(actual_x_data%distribution_energy)
       nblocks = load_balance_parameter%nblocks
@@ -1016,6 +995,8 @@ CONTAINS
       bins_left = .TRUE.
       do_it = .TRUE.
       bin = 0
+      CALL timeset(routineN//"_bin", handle_bin)
+
       DO WHILE (bins_left)
          IF (.NOT. do_dynamic_load_balancing) THEN
             bin = bin + 1
@@ -1054,9 +1035,7 @@ CONTAINS
          END IF
 
          IF (.NOT. do_it) CYCLE
-!$OMP MASTER
-         CALL timeset(routineN//"_bin", handle_bin)
-!$OMP END MASTER
+
          bintime_start = m_walltime()
          my_istart = distribution_energy%istart
          my_current_counter = 0
@@ -1667,10 +1646,9 @@ CONTAINS
             distribution_energy%time_other_scf = &
                distribution_energy%time_other_scf + bintime_stop - bintime_start
          ENDIF
-!$OMP MASTER
-         CALL timestop(handle_bin)
-!$OMP END MASTER
       END DO !bin
+
+      CALL timestop(handle_bin)
 
       ! sample the memory prior to deallocation (OMP-max-reduced)
       CALL m_memory(memsize_after)
@@ -1703,9 +1681,7 @@ CONTAINS
       ! Calculate how much memory has already been used (needed for in-core forces)
       shm_mem_compression_counter = memory_parameter%actual_memory_usage*memory_parameter%cache_size
 
-!$OMP MASTER
       CALL timestop(handle_main)
-!$OMP END MASTER
 
       ! cache maintenance if not doing everythong on the fly
       IF (.NOT. memory_parameter%do_all_on_the_fly) THEN
